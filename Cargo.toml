@@ -1,0 +1,8 @@
+[package]
+name = "astro-hej-rts"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.14.1"
+bevy_rapier2d = "0.27.0"
