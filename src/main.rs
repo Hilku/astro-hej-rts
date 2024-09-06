@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+mod movement;
 mod selection;
 mod units;
 use bevy_rapier2d::prelude::*;
@@ -26,5 +27,6 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(selection::SelectionPlugin)
         .add_plugins(units::UnitsPlugin)
+        .add_plugins(movement::MovementPlugin)
         .run();
 }

@@ -10,7 +10,7 @@ pub struct SelectionPlugin;
 
 #[derive(Resource)]
 pub struct CurrentlySelected {
-    ent: Vec<Entity>,
+    pub ent: Vec<Entity>,
 }
 
 impl Default for CurrentlySelected {
@@ -21,15 +21,8 @@ impl Default for CurrentlySelected {
 
 impl Plugin for SelectionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (list_all_selected, check_selection))
+        app.add_systems(Update, check_selection)
             .init_resource::<CurrentlySelected>();
-    }
-}
-
-fn list_all_selected(currently_selected: Res<CurrentlySelected>) {
-    //println!("Currently selected entities:");
-    for e in currently_selected.ent.iter() {
-        println!("{:?}", e);
     }
 }
 
