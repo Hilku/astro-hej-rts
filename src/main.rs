@@ -24,7 +24,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(StartupPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        //  .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(selection::SelectionPlugin)
         .add_plugins(units::UnitsPlugin)
         .add_plugins(movement::MovementPlugin)

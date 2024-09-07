@@ -66,6 +66,7 @@ fn command_units(
             true
         });
 
+        let mut index = -(currently_selected.ent.len() as f32 / 2.) as i32;
         for e in currently_selected.ent.iter() {
             let mut moving_to_unit = false;
             for clicked_e in clicked_units.iter() {
@@ -76,9 +77,13 @@ fn command_units(
             }
 
             if !moving_to_unit {
-                cmd.entity(*e)
-                    .insert(UnitCommand::MoveToPos(click_pos.extend(0.)));
+                cmd.entity(*e).insert(UnitCommand::MoveToPos(
+                    click_pos.extend(0.)
+                        + Vec3::new(80., 0., 0.) * index as f32
+                        + Vec3::new(0., -40., 0.) * index.abs() as f32, //NAIVE formation
+                ));
             }
+            index += 1;
         }
     }
 }
