@@ -53,6 +53,9 @@ impl Default for RectSelection {
     }
 }
 
+#[derive(Component)]
+pub struct Team(pub i32);
+
 fn check_selection(
     buttons: Res<ButtonInput<MouseButton>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -62,6 +65,7 @@ fn check_selection(
     rapier_context: Res<RapierContext>,
     mut rect_selection: ResMut<RectSelection>,
     mut gizmos: Gizmos,
+    team_q: Query<&Team>,
 ) {
     //Get world position of mouse
     let (camera, camera_transform) = q_camera.single();
@@ -81,19 +85,24 @@ fn check_selection(
 
         let filter = QueryFilter::default();
         rapier_context.intersections_with_point(click_pos, filter, |entity| {
-            if keyboard_input.pressed(KeyCode::ControlLeft) {
-                selected_new_unit = true;
-                if !currently_selected.ent.contains(&entity) {
-                    currently_selected.ent.push(entity);
-                } else {
-                    currently_selected.ent.retain(|e| *e != entity);
+            if let Ok(team_of_entity) = team_q.get(entity) {
+                if team_of_entity.0 == 0 {
+                    if keyboard_input.pressed(KeyCode::ControlLeft) {
+                        selected_new_unit = true;
+
+                        if !currently_selected.ent.contains(&entity) {
+                            currently_selected.ent.push(entity);
+                        } else {
+                            currently_selected.ent.retain(|e| *e != entity);
+                        }
+                    } else {
+                        currently_selected.ent = Vec::new();
+                        currently_selected.ent.push(entity);
+                        selected_new_unit = true;
+                    }
+                    // Return `false` instead if we want to stop searching for other colliders containing this point.
                 }
-            } else {
-                currently_selected.ent = Vec::new();
-                currently_selected.ent.push(entity);
-                selected_new_unit = true;
             }
-            // Return `false` instead if we want to stop searching for other colliders containing this point.
             true
         });
 
@@ -107,7 +116,6 @@ fn check_selection(
             rect_selection.current_point = click_pos;
             if rect_selection.state != RectSelectState::Selecting {
                 rect_selection.state = RectSelectState::Selecting;
-                println!("DRagging out rect_selection!");
             }
             let gizmo_rect = Rect::from_corners(rect_selection.start_point, click_pos);
             gizmos.rect(
@@ -133,14 +141,16 @@ fn check_selection(
                 &shape,
                 filter,
                 |entity| {
-                    if !currently_selected.ent.contains(&entity) {
-                        currently_selected.ent.push(entity);
+                    if let Ok(team_of_entity) = team_q.get(entity) {
+                        if team_of_entity.0 == 0 {
+                            if !currently_selected.ent.contains(&entity) {
+                                currently_selected.ent.push(entity);
+                            }
+                        }
                     }
                     true
                 },
             );
-
-            println!("Let go of rect selection!");
         }
     }
 }
