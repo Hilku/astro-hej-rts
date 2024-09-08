@@ -1,4 +1,5 @@
 use std::f32::consts::E;
+use std::process::Command;
 
 use crate::movement::FaceMovementDirection;
 use crate::selection::{CurrentlySelected, Selectable, Team};
@@ -11,8 +12,12 @@ pub struct UnitsPlugin;
 
 impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_units, spawn_enemy_units)); //Temp
+        app.add_systems(
+            Startup,
+            (spawn_units, spawn_enemy_units, spawn_command_highlighters),
+        ); //Temp
         app.add_systems(Update, (command_units, move_units));
+        app.add_systems(PostUpdate, display_command_of_selection);
     }
 }
 
@@ -60,7 +65,7 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         .insert(Team(1));
     }
 }
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub enum UnitCommand {
     MoveToPos(Vec3),
     MoveToEntity(Entity),
@@ -83,7 +88,6 @@ fn command_units(
     q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     rapier_context: Res<RapierContext>,
     mut q_unit_command_list: Query<&mut UnitCommandList>,
-    mut cmd: Commands,
 ) {
     if buttons.just_pressed(MouseButton::Right) {
         let (camera, camera_transform) = q_camera.single();
@@ -141,7 +145,7 @@ fn move_units(
             match command {
                 UnitCommand::MoveToPos(pos) => {
                     let dif_vec = *pos - tr.translation;
-                    if dif_vec.length() > 1. {
+                    if dif_vec.length() > 2. {
                         tr.translation += dif_vec.normalize() * vel.0 * time.delta_seconds();
                     } else {
                         *command = UnitCommand::Completed;
@@ -158,4 +162,47 @@ fn move_units(
     }
 }
 
-fn clear_completed_commands() {}
+fn display_command_of_selection(
+    currently_selected: Res<CurrentlySelected>,
+    q_unit_command_list: Query<&UnitCommandList>,
+    mut command_highlighters: Query<&mut Transform, With<CommandHighlighter>>,
+) {
+    for mut tr in command_highlighters.iter_mut() {
+        tr.translation = Vec3::new(1000000., 9999999., -1.);
+    }
+
+    let mut all_highlighters = command_highlighters.iter_mut();
+    for selected in currently_selected.ent.iter() {
+        if let Ok(command) = q_unit_command_list.get(*selected) {
+            for c in &command.commands {
+                match c {
+                    UnitCommand::MoveToPos(pos) => {
+                        if let Some(mut highlighter_tr) = all_highlighters.next() {
+                            highlighter_tr.translation = *pos;
+                        }
+                    }
+                    UnitCommand::MoveToEntity(_) => {}
+                    UnitCommand::Completed => {}
+                }
+            }
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct CommandHighlighter;
+
+fn spawn_command_highlighters(mut cmd: Commands, asset_server: Res<AssetServer>) {
+    for _ in 0..64 {
+        cmd.spawn(SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(1000000., 9999999., -1.)),
+            texture: asset_server.load("icon_plusLarge.png"),
+            sprite: Sprite {
+                color: Color::srgba(0., 1., 0., 0.1),
+                ..default()
+            },
+            ..Default::default()
+        })
+        .insert(CommandHighlighter);
+    }
+}
