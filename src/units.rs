@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-use std::process::Command;
 
 use crate::movement::FaceMovementDirection;
 use crate::selection::{CurrentlySelected, Selectable, Team};
@@ -17,39 +15,58 @@ impl Plugin for UnitsPlugin {
             (spawn_units, spawn_enemy_units, spawn_command_highlighters),
         ); //Temp
         app.add_systems(Update, (command_units, move_units));
-        app.add_systems(PostUpdate, display_command_of_selection);
+        app.add_systems(
+            PostUpdate,
+            (display_command_of_selection, update_health_bars),
+        );
     }
 }
 
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     for i in 0..5 {
-        cmd.spawn(SpriteBundle {
-            texture: asset_server.load("units/ship_basic.png"),
+        cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(i as f32 * 100., 0., 0.)),
             ..Default::default()
         })
         .insert(Collider::cuboid(25.0, 25.0))
         .insert(Sensor)
         .insert(Selectable)
-        .insert(FaceMovementDirection {
-            last_pos: Vec3::ZERO,
-        })
         .insert(Velocity(150.))
         .insert(UnitCommandList {
             commands: Vec::new(),
         })
-        .insert(Team(0));
+        .insert(Health {
+            current: 100.,
+            max_health: 100.,
+        })
+        .insert(Team(0))
+        .with_children(|parent| {
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/ship_basic.png"),
+                    ..Default::default()
+                })
+                .insert(FaceMovementDirection {
+                    last_pos: Vec3::ZERO,
+                });
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("healthbar.png"),
+                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                    sprite: Sprite {
+                        color: Color::srgba(0., 1., 0., 1.),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(HealthBar);
+        });
     }
 }
 fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     for i in 0..5 {
-        cmd.spawn(SpriteBundle {
-            texture: asset_server.load("units/ship_basic.png"),
+        cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(i as f32 * 100., 300., 0.)),
-            sprite: Sprite {
-                color: Color::srgb(1., 0.5, 0.5),
-                ..default()
-            },
             ..Default::default()
         })
         .insert(Collider::cuboid(25.0, 25.0))
@@ -61,8 +78,37 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         .insert(UnitCommandList {
             commands: Vec::new(),
         })
+        .insert(Health {
+            current: 100.,
+            max_health: 100.,
+        })
         .insert(Velocity(150.))
-        .insert(Team(1));
+        .insert(Team(1))
+        .with_children(|parent| {
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/ship_basic.png"),
+                    sprite: Sprite {
+                        color: Color::srgb(1., 0.5, 0.5),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(FaceMovementDirection {
+                    last_pos: Vec3::ZERO,
+                });
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("healthbar.png"),
+                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                    sprite: Sprite {
+                        color: Color::srgba(1., 0., 0., 1.),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(HealthBar);
+        });
     }
 }
 #[derive(Component, Clone, Copy)]
@@ -164,8 +210,9 @@ fn move_units(
 
 fn display_command_of_selection(
     currently_selected: Res<CurrentlySelected>,
-    q_unit_command_list: Query<&UnitCommandList>,
+    q_unit_command_list: Query<(&UnitCommandList, &Transform), Without<CommandHighlighter>>,
     mut command_highlighters: Query<&mut Transform, With<CommandHighlighter>>,
+    mut gizmos: Gizmos,
 ) {
     for mut tr in command_highlighters.iter_mut() {
         tr.translation = Vec3::new(1000000., 9999999., -1.);
@@ -173,12 +220,20 @@ fn display_command_of_selection(
 
     let mut all_highlighters = command_highlighters.iter_mut();
     for selected in currently_selected.ent.iter() {
-        if let Ok(command) = q_unit_command_list.get(*selected) {
+        if let Ok((command, unit_tr)) = q_unit_command_list.get(*selected) {
+            let mut last_pos = None;
+            if command.commands.len() > 1 {
+                last_pos = Some(unit_tr.translation);
+            }
             for c in &command.commands {
                 match c {
                     UnitCommand::MoveToPos(pos) => {
                         if let Some(mut highlighter_tr) = all_highlighters.next() {
                             highlighter_tr.translation = *pos;
+                            if let Some(last_p) = last_pos {
+                                gizmos.linestrip([last_p, *pos], Color::srgba(0., 1., 0., 0.1));
+                            }
+                            last_pos = Some(*pos);
                         }
                     }
                     UnitCommand::MoveToEntity(_) => {}
@@ -204,5 +259,29 @@ fn spawn_command_highlighters(mut cmd: Commands, asset_server: Res<AssetServer>)
             ..Default::default()
         })
         .insert(CommandHighlighter);
+    }
+}
+
+#[derive(Component)]
+pub struct HealthBar;
+
+#[derive(Component)]
+pub struct Health {
+    pub current: f32,
+    pub max_health: f32,
+}
+
+fn update_health_bars(
+    mut health_q: Query<(&mut Health, &Children)>,
+    mut healthbar_q: Query<&mut Transform, With<HealthBar>>,
+    time: Res<Time>,
+) {
+    for (mut health, children) in health_q.iter_mut() {
+        health.current -= time.delta_seconds() * 10.;
+        for c in children.iter() {
+            if let Ok(mut bar) = healthbar_q.get_mut(*c) {
+                bar.scale = Vec3::new(health.current / health.max_health, 1., 1.);
+            }
+        }
     }
 }

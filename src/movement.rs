@@ -15,16 +15,18 @@ impl Plugin for MovementPlugin {
     }
 }
 
-fn face_towards_movement(mut entities: Query<(&mut Transform, &mut FaceMovementDirection)>) {
-    for (mut tr, mut face_dir) in entities.iter_mut() {
-        if face_dir.last_pos != tr.translation {
-            let diff = tr.translation - face_dir.last_pos;
+fn face_towards_movement(
+    mut entities: Query<(&mut Transform, &mut FaceMovementDirection, &GlobalTransform)>,
+) {
+    for (mut tr, mut face_dir, global_tr) in entities.iter_mut() {
+        if face_dir.last_pos != global_tr.translation() {
+            let diff = global_tr.translation() - face_dir.last_pos;
             let angle = diff.y.atan2(diff.x) - FRAC_PI_2;
             tr.rotation = tr
                 .rotation
                 .slerp(Quat::from_axis_angle(Vec3::Z, angle), 0.1);
         }
 
-        face_dir.last_pos = tr.translation;
+        face_dir.last_pos = global_tr.translation();
     }
 }
