@@ -1,9 +1,10 @@
-use crate::movement::FaceMovementDirection;
+use crate::movement::{Avoidance, FaceMovementDirection};
 use crate::selection::{CurrentlySelected, Selectable, Team};
 use crate::MainCamera;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
+use std::f32::consts::FRAC_PI_2;
 
 pub struct UnitsPlugin;
 
@@ -13,7 +14,15 @@ impl Plugin for UnitsPlugin {
             Startup,
             (spawn_units, spawn_enemy_units, spawn_command_highlighters),
         ); //Temp
-        app.add_systems(Update, (command_units, move_units));
+        app.add_systems(
+            Update,
+            (
+                command_units,
+                move_units,
+                bullet_behaviour,
+                tick_attack_timers,
+            ),
+        );
         app.add_systems(
             PostUpdate,
             (
@@ -28,6 +37,8 @@ impl Plugin for UnitsPlugin {
 }
 
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
     for i in 0..5 {
         cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(i as f32 * 100., 0., 0.)),
@@ -48,8 +59,9 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         .insert(AttackComponent {
             attack_range: 200.,
             attack_amount: 10.,
-            time_between_attacks: Timer::from_seconds(0.5, TimerMode::Once),
+            time_between_attacks: attack_timer.clone(),
         })
+        .insert(Avoidance)
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
@@ -57,7 +69,7 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(FaceMovementDirection {
-                    last_pos: Vec3::ZERO,
+                    face_to_pos: Vec3::ZERO,
                 });
             parent
                 .spawn(SpriteBundle {
@@ -74,6 +86,8 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     }
 }
 fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
     for i in 0..5 {
         cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(i as f32 * 100., 300., 0.)),
@@ -91,6 +105,12 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         })
         .insert(Velocity(150.))
         .insert(Team(1))
+        .insert(AttackComponent {
+            attack_range: 200.,
+            attack_amount: 10.,
+            time_between_attacks: attack_timer.clone(),
+        })
+        .insert(Avoidance)
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
@@ -102,7 +122,7 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(FaceMovementDirection {
-                    last_pos: Vec3::ZERO,
+                    face_to_pos: Vec3::ZERO,
                 });
             parent
                 .spawn(SpriteBundle {
@@ -212,20 +232,28 @@ fn move_units(
         &Velocity,
         &mut UnitCommandList,
         &mut AttackComponent,
+        &Children,
     )>,
-
-    mut transforms: Query<&mut Transform>,
-    mut damage_event_writer: EventWriter<DamageEvent>,
+    mut transforms: Query<(&mut Transform, &GlobalTransform)>,
+    mut face_direction_q: Query<&mut FaceMovementDirection>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
 ) {
-    for (e, vel, mut command_list, mut attack_comp) in units.iter_mut() {
+    for (e, vel, mut command_list, mut attack_comp, children) in units.iter_mut() {
         if command_list.commands.len() > 0 {
             let command = &mut command_list.commands[0];
             match command {
                 UnitCommand::MoveToPos(pos) => {
-                    if let Ok(mut tr) = transforms.get_mut(e) {
+                    if let Ok((mut tr, _)) = transforms.get_mut(e) {
                         let dif_vec = *pos - tr.translation;
                         if dif_vec.length() > 2. {
                             tr.translation += dif_vec.normalize() * vel.0 * time.delta_seconds();
+                            for child in children {
+                                if let Ok(mut face_dir) = face_direction_q.get_mut(*child) {
+                                    face_dir.face_to_pos = *pos;
+                                    break;
+                                }
+                            }
                         } else {
                             *command = UnitCommand::Completed;
                         }
@@ -235,22 +263,35 @@ fn move_units(
                     command_list.commands.remove(0);
                 }
                 UnitCommand::AttackEntity(enemy) => {
-                    if let Ok([mut tr, enemy_tr]) = transforms.get_many_mut([e, *enemy]) {
+                    if let Ok([(mut tr, _global_tr), (enemy_tr, enemy_global_tr)]) =
+                        transforms.get_many_mut([e, *enemy])
+                    {
                         let unit_translation = tr.translation;
                         let enemy_translation = enemy_tr.translation;
                         let diff_vec = enemy_translation - unit_translation;
+                        for child in children {
+                            if let Ok(mut face_dir) = face_direction_q.get_mut(*child) {
+                                face_dir.face_to_pos = enemy_global_tr.translation();
+                                break;
+                            }
+                        }
                         if diff_vec.length() > attack_comp.attack_range {
                             tr.translation += diff_vec.normalize() * vel.0 * time.delta_seconds();
                         } else {
                             if attack_comp.time_between_attacks.finished() {
                                 attack_comp.time_between_attacks.reset();
-                                damage_event_writer.send(DamageEvent {
-                                    target: *enemy,
-                                    dmg_amount: attack_comp.attack_amount,
-                                });
+
+                                spawn_bullet(
+                                    &mut commands,
+                                    attack_comp.attack_amount,
+                                    tr.translation - Vec3::new(0., 0., 1.),
+                                    e,
+                                    *enemy,
+                                    enemy_tr.translation,
+                                    &asset_server,
+                                );
                             }
                         }
-                        attack_comp.time_between_attacks.tick(time.delta());
                     } else {
                         *command = UnitCommand::Completed;
                     }
@@ -259,6 +300,73 @@ fn move_units(
                     println!("Assigned command i cannot yet do!");
                 }
             }
+        }
+    }
+}
+
+fn spawn_bullet(
+    cmd: &mut Commands,
+    damage: f32,
+    spawn_pos: Vec3,
+    shooter: Entity,
+    target: Entity,
+    target_pos: Vec3,
+    asset_server: &Res<AssetServer>,
+) {
+    let mut start_transform = Transform::from_translation(spawn_pos);
+    start_transform.scale = Vec3::new(0.1, 0.3, 1.);
+
+    let diff = target_pos - spawn_pos;
+    let angle = diff.y.atan2(diff.x) - FRAC_PI_2;
+    start_transform.rotation = Quat::from_axis_angle(Vec3::Z, angle);
+
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("effect_yellow.png"),
+        transform: start_transform,
+        ..Default::default()
+    })
+    .insert(FlyingBullet {
+        target: target,
+        damage: damage,
+        speed: 1000.,
+        shooter: shooter,
+    })
+    .insert(FaceMovementDirection {
+        face_to_pos: target_pos,
+    });
+}
+
+#[derive(Component)]
+pub struct FlyingBullet {
+    target: Entity,
+    damage: f32,
+    speed: f32,
+    shooter: Entity,
+}
+
+fn bullet_behaviour(
+    time: Res<Time>,
+    mut bullets: Query<(&mut Transform, &FlyingBullet, Entity)>,
+    targets: Query<&Transform, Without<FlyingBullet>>,
+    mut damage_event_writer: EventWriter<DamageEvent>,
+    mut cmd: Commands,
+) {
+    for (mut bullet_tr, bullet, e) in bullets.iter_mut() {
+        if let Ok(target_tr) = targets.get(bullet.target) {
+            let diff_vec = (target_tr.translation - Vec3::new(0., 0., 1.)) - bullet_tr.translation;
+            if diff_vec.length() > 40. {
+                bullet_tr.translation +=
+                    diff_vec.normalize_or_zero() * time.delta_seconds() * bullet.speed;
+            } else {
+                cmd.entity(e).despawn_recursive();
+                damage_event_writer.send(DamageEvent {
+                    target: bullet.target,
+                    dmg_amount: bullet.damage,
+                    damager: bullet.shooter,
+                });
+            }
+        } else {
+            cmd.entity(e).despawn_recursive();
         }
     }
 }
@@ -343,6 +451,7 @@ pub struct Health {
 pub struct DamageEvent {
     target: Entity,
     dmg_amount: f32,
+    damager: Entity,
 }
 
 fn update_health_bars(
@@ -361,11 +470,19 @@ fn update_health_bars(
 fn process_damage_events(
     mut ev_damage: EventReader<DamageEvent>,
     mut health_q: Query<&mut Health>,
+    mut unit_commands: Query<&mut UnitCommandList>,
 ) {
     for dmg_event in ev_damage.read() {
         if let Ok(mut hp) = health_q.get_mut(dmg_event.target) {
             hp.current -= dmg_event.dmg_amount;
             hp.current = hp.current.clamp(0., hp.max_health);
+            if let Ok(mut unit_command) = unit_commands.get_mut(dmg_event.target) {
+                if unit_command.commands.len() == 0 {
+                    unit_command
+                        .commands
+                        .push(UnitCommand::AttackEntity(dmg_event.damager));
+                }
+            }
         }
     }
 }
@@ -375,5 +492,11 @@ fn check_dead_units(mut cmd: Commands, health: Query<(&Health, Entity)>) {
         if hp.current <= 0. {
             cmd.entity(e).despawn_recursive();
         }
+    }
+}
+
+fn tick_attack_timers(time: Res<Time>, mut attack_comps: Query<&mut AttackComponent>) {
+    for mut attack_comp in attack_comps.iter_mut() {
+        attack_comp.time_between_attacks.tick(time.delta());
     }
 }
