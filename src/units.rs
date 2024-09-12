@@ -1,5 +1,7 @@
 use crate::movement::{Avoidance, FaceMovementDirection};
 use crate::selection::{CurrentlySelected, Selectable, Team};
+use crate::AppState;
+use crate::DontDestroyOnLoad;
 use crate::MainCamera;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -10,10 +12,8 @@ pub struct UnitsPlugin;
 
 impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Startup,
-            (spawn_units, spawn_enemy_units, spawn_command_highlighters),
-        ); //Temp
+        app.add_systems(Startup, spawn_command_highlighters); //Temp
+        app.add_systems(OnEnter(AppState::InGame), (spawn_units, spawn_enemy_units));
         app.add_systems(
             Update,
             (
@@ -36,12 +36,25 @@ impl Plugin for UnitsPlugin {
     }
 }
 
+pub enum AlertBehaviour {
+    AttackIfEnemyNearby,
+    AttackIfAttacked,
+    Peaceful,
+}
+
+#[derive(Component)]
+pub struct MotherUnit;
+
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
-    for i in 0..5 {
+    for i in -100..100 {
         cmd.spawn(SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(i as f32 * 100., 0., 0.)),
+            transform: Transform::from_translation(Vec3::new(
+                (i as f32 % 10.) * 100.,
+                45. * i as f32 / 10.,
+                0.,
+            )),
             ..Default::default()
         })
         .insert(Collider::cuboid(25.0, 25.0))
@@ -84,6 +97,56 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                 .insert(HealthBar);
         });
     }
+    //SPAWNMOTHERSHIP
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(Vec3::new(0., -100., 0.)),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(50.0, 50.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(Velocity(50.))
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 300.,
+        max_health: 300.,
+    })
+    .insert(Team(0))
+    .insert(Avoidance)
+    .insert(MotherUnit)
+    .insert(AttackComponent {
+        attack_range: 300.,
+        attack_amount: 1.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/station_A.png"),
+                sprite: Sprite {
+                    color: Color::srgba(1., 1., 1., 1.),
+                    custom_size: Some(Vec2::new(128., 128.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -60., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+    });
 }
 fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
@@ -215,8 +278,8 @@ fn command_units(
                     }
                     unit_command_list.commands.push(UnitCommand::MoveToPos(
                         click_pos.extend(0.)
-                            + Vec3::new(80., 0., 0.) * index as f32
-                            + Vec3::new(0., -40., 0.) * index.abs() as f32, //NAIVE formation
+                            /*+ Vec3::new(80., 0., 0.) * index as f32
+                            + Vec3::new(0., -40., 0.) * index.abs() as f32, //NAIVE formation*/
                     ))
                 }
                 index += 1;
@@ -435,7 +498,8 @@ fn spawn_command_highlighters(mut cmd: Commands, asset_server: Res<AssetServer>)
             },
             ..Default::default()
         })
-        .insert(CommandHighlighter);
+        .insert(CommandHighlighter)
+        .insert(DontDestroyOnLoad);
     }
 }
 

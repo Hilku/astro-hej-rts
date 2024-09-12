@@ -1,4 +1,4 @@
-use crate::MainCamera;
+use crate::{DontDestroyOnLoad, MainCamera};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
@@ -166,7 +166,8 @@ fn spawn_highlighters(mut cmd: Commands, asset_server: Res<AssetServer>) {
             },
             ..Default::default()
         })
-        .insert(SelectionHighlighter);
+        .insert(SelectionHighlighter)
+        .insert(DontDestroyOnLoad);
     }
 }
 
