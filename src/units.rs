@@ -48,7 +48,7 @@ pub struct MotherUnit;
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
-    for i in -100..100 {
+    for i in -3..3 {
         cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(
                 (i as f32 % 10.) * 100.,
@@ -74,7 +74,10 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             attack_amount: 10.,
             time_between_attacks: attack_timer.clone(),
         })
-        .insert(Avoidance)
+        .insert(Avoidance {
+            last_frame_pos: Vec3::ZERO,
+            currently_avoiding: false,
+        })
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
@@ -114,7 +117,10 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         max_health: 300.,
     })
     .insert(Team(0))
-    .insert(Avoidance)
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
     .insert(MotherUnit)
     .insert(AttackComponent {
         attack_range: 300.,
@@ -173,7 +179,10 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             attack_amount: 10.,
             time_between_attacks: attack_timer.clone(),
         })
-        .insert(Avoidance)
+        .insert(Avoidance {
+            last_frame_pos: Vec3::ZERO,
+            currently_avoiding: false,
+        })
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
@@ -252,7 +261,12 @@ fn command_units(
             true
         });
 
-        let mut index = -(currently_selected.ent.len() as f32 / 2.) as i32;
+        let number_of_units = (currently_selected.ent.len() as f64).sqrt();
+        let column_count = number_of_units.ceil() as i64;
+
+        let mut column_index = 0;
+        let mut row_index = 0;
+
         for e in currently_selected.ent.iter() {
             if let Ok(mut unit_command_list) = q_unit_command_list.get_mut(*e) {
                 let mut moving_to_unit = false;
@@ -278,11 +292,15 @@ fn command_units(
                     }
                     unit_command_list.commands.push(UnitCommand::MoveToPos(
                         click_pos.extend(0.)
-                            /*+ Vec3::new(80., 0., 0.) * index as f32
-                            + Vec3::new(0., -40., 0.) * index.abs() as f32, //NAIVE formation*/
-                    ))
+                            + Vec3::new(80., 0., 0.) * column_index as f32
+                            + Vec3::new(0., -80., 0.) * row_index as f32,
+                    ));
+                    column_index += 1;
+                    if column_index >= column_count {
+                        row_index += 1;
+                        column_index = 0;
+                    }
                 }
-                index += 1;
             }
         }
     }
@@ -295,6 +313,7 @@ fn move_units(
         &Velocity,
         &mut UnitCommandList,
         &mut AttackComponent,
+        &Avoidance,
         &Children,
     )>,
     mut transforms: Query<(&mut Transform, &GlobalTransform)>,
@@ -302,7 +321,7 @@ fn move_units(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    for (e, vel, mut command_list, mut attack_comp, children) in units.iter_mut() {
+    for (e, vel, mut command_list, mut attack_comp, avoidance, children) in units.iter_mut() {
         if command_list.commands.len() > 0 {
             let command = &mut command_list.commands[0];
             match command {

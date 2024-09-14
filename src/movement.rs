@@ -1,6 +1,9 @@
 use std::f32::consts::FRAC_PI_2;
 
+use crate::MainCamera;
+use bevy::math::VectorSpace;
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
 
 #[derive(Component)]
@@ -9,19 +12,22 @@ pub struct FaceMovementDirection {
 }
 
 #[derive(Component)]
-pub struct Avoidance;
+pub struct Avoidance {
+    pub last_frame_pos: Vec3,
+    pub currently_avoiding: bool,
+}
 
 pub struct MovementPlugin;
 
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostUpdate, face_towards_movement);
-        app.add_systems(Update, avoid_each_other);
+        app.add_systems(Update, (avoid_each_other, camera_mover));
     }
 }
 
 fn avoid_each_other(
-    mut avoiders: Query<(Entity, &GlobalTransform), With<Avoidance>>,
+    mut avoiders: Query<(Entity, &GlobalTransform, &mut Avoidance)>,
     mut transforms: Query<&mut Transform>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
@@ -29,7 +35,12 @@ fn avoid_each_other(
     let shape = Collider::ball(20.);
     let shape_rot = 0.;
     let filter = QueryFilter::default();
-    for (e, global_tr) in avoiders.iter_mut() {
+    for (e, global_tr, mut avoidance) in avoiders.iter_mut() {
+        avoidance.currently_avoiding = false;
+        if avoidance.last_frame_pos == global_tr.translation() {
+            continue;
+        }
+        avoidance.last_frame_pos = global_tr.translation();
         let mut avoidance_vec = Vec3::ZERO;
         let shape_pos = global_tr.translation().truncate();
 
@@ -45,6 +56,7 @@ fn avoid_each_other(
                 if let Ok([avoider_tr, obstacle_tr]) = transforms.get_many([e, obstacle_entity]) {
                     let diff_vec = avoider_tr.translation - obstacle_tr.translation;
                     avoidance_vec += diff_vec;
+                    avoidance.currently_avoiding = true;
                 }
                 true
             },
@@ -65,5 +77,34 @@ fn face_towards_movement(
         tr.rotation = tr
             .rotation
             .slerp(Quat::from_axis_angle(Vec3::Z, angle), 0.1);
+    }
+}
+
+fn camera_mover(
+    mut camera: Query<&mut Transform, With<MainCamera>>,
+    q_windows: Query<&Window, With<PrimaryWindow>>,
+    time: Res<Time>,
+) {
+    for mut c_tr in camera.iter_mut() {
+        //Check if cursor is at the window's edge - then check which edge    // Games typically only have one window (the primary window)
+        let mut camera_mover_vec = Vec3::ZERO;
+        let window = q_windows.single();
+        if let Some(position) = window.cursor_position() {
+            if position.x >= (window.resolution.physical_width() - 2) as f32 {
+                camera_mover_vec += Vec3::new(1., 0., 0.);
+            } else if position.x <= 0. {
+                camera_mover_vec += Vec3::new(-1., 0., 0.);
+            }
+
+            if position.y >= (window.resolution.physical_height() - 2) as f32 {
+                camera_mover_vec += Vec3::new(0., -1., 0.);
+            } else if position.y <= 0. {
+                camera_mover_vec += Vec3::new(0., 1., 0.);
+            }
+
+            c_tr.translation += camera_mover_vec * time.delta_seconds() * 1000.;
+        } else {
+            //println!("Cursor is not in the game window.");
+        }
     }
 }

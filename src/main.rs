@@ -3,6 +3,7 @@ mod movement;
 mod selection;
 mod ui;
 mod units;
+use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_rapier2d::prelude::*;
 use selection::Team;
 use units::MotherUnit;
@@ -32,6 +33,9 @@ impl Plugin for StartupPlugin {
         app.add_systems(Startup, build_world);
         app.add_systems(OnExit(AppState::InGame), despawn_everything);
         app.add_systems(OnExit(AppState::Menu), despawn_everything);
+        app.add_systems(Update, detect_lose.run_if(in_state(GamePhase::Playing)));
+        app.add_systems(OnEnter(GamePhase::Playing), cursor_grab);
+        app.add_systems(OnExit(GamePhase::Playing), cursor_ungrab);
     }
 }
 
@@ -76,4 +80,32 @@ fn despawn_everything(
     }
 }
 
-fn detect_lose(mother_ship: Query<&Team, With<MotherUnit>>) {}
+fn detect_lose(
+    mother_ship: Query<&Team, With<MotherUnit>>,
+    mut game_phase: ResMut<NextState<GamePhase>>,
+) {
+    let mut has_mother_ship = false;
+    for team in mother_ship.iter() {
+        if team.0 == 0 {
+            has_mother_ship = true;
+            break;
+        }
+    }
+
+    if !has_mother_ship {
+        game_phase.set(GamePhase::Lost);
+    }
+}
+
+fn cursor_grab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
+    let mut primary_window = q_windows.single_mut();
+
+    // if you want to use the cursor, but not let it leave the window,
+    // use `Confined` mode:
+    primary_window.cursor.grab_mode = CursorGrabMode::Confined;
+}
+fn cursor_ungrab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
+    let mut primary_window = q_windows.single_mut();
+
+    primary_window.cursor.grab_mode = CursorGrabMode::None;
+}
