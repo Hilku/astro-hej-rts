@@ -1,8 +1,10 @@
 use bevy::prelude::*;
+mod materials;
 mod movement;
 mod selection;
 mod ui;
 mod units;
+use bevy::render::camera::ClearColorConfig;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_rapier2d::prelude::*;
 use selection::Team;
@@ -47,6 +49,10 @@ fn build_world(mut cmd: Commands) {
             scale: 1.0,
             ..default()
         },
+        camera: Camera {
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.02)),
+            ..Default::default()
+        },
         ..Default::default()
     })
     .insert(MainCamera)
@@ -65,6 +71,7 @@ fn main() {
         .add_plugins(ui::UIPlugin)
         .add_plugins(units::UnitsPlugin)
         .add_plugins(movement::MovementPlugin)
+        .add_plugins(materials::MaterialPlugin)
         .run();
 }
 
@@ -80,6 +87,7 @@ fn despawn_everything(
     }
 }
 
+//TODO: Add a tracker on the motherunit so we can move the camera there on lose!
 fn detect_lose(
     mother_ship: Query<&Team, With<MotherUnit>>,
     mut game_phase: ResMut<NextState<GamePhase>>,
@@ -109,3 +117,8 @@ fn cursor_ungrab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
 
     primary_window.cursor.grab_mode = CursorGrabMode::None;
 }
+
+/* TODO: add goal! mine 10000 rocks (as many rocks as you can in x time)
+
+
+*/

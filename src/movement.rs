@@ -17,12 +17,17 @@ pub struct Avoidance {
     pub currently_avoiding: bool,
 }
 
+#[derive(Component)]
+pub struct MoveForward {
+    pub speed: f32,
+}
+
 pub struct MovementPlugin;
 
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostUpdate, face_towards_movement);
-        app.add_systems(Update, (avoid_each_other, camera_mover));
+        app.add_systems(Update, (avoid_each_other, camera_mover, move_forward));
     }
 }
 
@@ -106,5 +111,12 @@ fn camera_mover(
         } else {
             //println!("Cursor is not in the game window.");
         }
+    }
+}
+
+fn move_forward(time: Res<Time>, mut all_elements: Query<(&mut Transform, &MoveForward)>) {
+    for (mut tr, move_forward) in all_elements.iter_mut() {
+        let forward = tr.right();
+        tr.translation += forward * move_forward.speed * time.delta_seconds();
     }
 }

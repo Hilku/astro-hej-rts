@@ -1,3 +1,4 @@
+use crate::materials::Mineable;
 use crate::movement::{Avoidance, FaceMovementDirection};
 use crate::selection::{CurrentlySelected, Selectable, Team};
 use crate::AppState;
@@ -34,12 +35,6 @@ impl Plugin for UnitsPlugin {
         );
         app.add_event::<DamageEvent>();
     }
-}
-
-pub enum AlertBehaviour {
-    AttackIfEnemyNearby,
-    AttackIfAttacked,
-    Peaceful,
 }
 
 #[derive(Component)]
@@ -130,7 +125,7 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     .with_children(|parent| {
         parent
             .spawn(SpriteBundle {
-                texture: asset_server.load("units/station_A.png"),
+                texture: asset_server.load("units/station_B.png"),
                 sprite: Sprite {
                     color: Color::srgba(1., 1., 1., 1.),
                     custom_size: Some(Vec2::new(128., 128.)),
@@ -154,6 +149,10 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             .insert(HealthBar);
     });
 }
+
+/*TODO: Spawn enemies in waves
+They should attack closest enemies
+*/
 fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
@@ -210,11 +209,21 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         });
     }
 }
+
 #[derive(Component, Clone, Copy)]
 pub enum UnitCommand {
     MoveToPos(Vec3),
     AttackEntity(Entity),
+    MineEntity(Entity),
+    ReturnCargoToUnit(Entity),
     Completed,
+}
+
+#[derive(Component)]
+pub struct MiningComponent {
+    pub current_carry: f32,
+    pub max_carry: f32,
+    pub time_between_mine: Timer,
 }
 
 #[derive(Component)]
@@ -223,7 +232,7 @@ pub struct UnitCommandList {
 }
 
 #[derive(Component)]
-struct Velocity(f32);
+pub struct Velocity(pub f32);
 
 #[derive(Component)]
 pub struct AttackComponent {
@@ -241,6 +250,8 @@ fn command_units(
     rapier_context: Res<RapierContext>,
     mut q_unit_command_list: Query<&mut UnitCommandList>,
     q_team: Query<&Team>,
+    q_mining: Query<&MiningComponent>,
+    q_mineable: Query<&Mineable>,
 ) {
     if buttons.just_pressed(MouseButton::Right) {
         let (camera, camera_transform) = q_camera.single();
@@ -270,18 +281,29 @@ fn command_units(
         for e in currently_selected.ent.iter() {
             if let Ok(mut unit_command_list) = q_unit_command_list.get_mut(*e) {
                 let mut moving_to_unit = false;
+                let mut has_mining_comp = false;
+                if let Ok(_) = q_mining.get(*e) {
+                    has_mining_comp = true;
+                }
                 for clicked_e in clicked_units.iter() {
+                    if !keyboard_input.pressed(KeyCode::ShiftLeft) {
+                        unit_command_list.commands = Vec::new();
+                    }
                     if e != clicked_e {
                         if let Ok(clicked_team) = q_team.get(*clicked_e) {
                             if clicked_team.0 != 0 {
-                                if !keyboard_input.pressed(KeyCode::ShiftLeft) {
-                                    unit_command_list.commands = Vec::new();
-                                }
                                 unit_command_list
                                     .commands
                                     .push(UnitCommand::AttackEntity(*clicked_e));
                             }
+                        } else if let Ok(_mineable) = q_mineable.get(*clicked_e) {
+                            if (has_mining_comp) {
+                                unit_command_list
+                                    .commands
+                                    .push(UnitCommand::MineEntity(*clicked_e));
+                            }
                         }
+                        //if not: check if material depot: Add unitcommand::return
                         moving_to_unit = true;
                     }
                 }
@@ -313,15 +335,16 @@ fn move_units(
         &Velocity,
         &mut UnitCommandList,
         &mut AttackComponent,
-        &Avoidance,
         &Children,
     )>,
+    mut mining_component_q: Query<&mut MiningComponent>,
     mut transforms: Query<(&mut Transform, &GlobalTransform)>,
     mut face_direction_q: Query<&mut FaceMovementDirection>,
     mut commands: Commands,
+    mut mineables_q: Query<&mut Mineable>,
     asset_server: Res<AssetServer>,
 ) {
-    for (e, vel, mut command_list, mut attack_comp, avoidance, children) in units.iter_mut() {
+    for (e, vel, mut command_list, mut attack_comp, children) in units.iter_mut() {
         if command_list.commands.len() > 0 {
             let command = &mut command_list.commands[0];
             match command {
@@ -377,6 +400,50 @@ fn move_units(
                     } else {
                         *command = UnitCommand::Completed;
                     }
+                }
+                UnitCommand::MineEntity(mineable_entity) => {
+                    if let Ok(mut mining_comp) = mining_component_q.get_mut(e) {
+                        mining_comp.time_between_mine.tick(time.delta());
+                        if let Ok(mut mineable) = mineables_q.get_mut(*mineable_entity) {
+                            if mining_comp.current_carry < mining_comp.max_carry {
+                                if let Ok(
+                                    [(mut tr, _global_tr), (mineable_tr, _mineable_global_tr)],
+                                ) = transforms.get_many_mut([e, *mineable_entity])
+                                {
+                                    let diff_vec = mineable_tr.translation - tr.translation;
+                                    if diff_vec.length() > 30.0 {
+                                        tr.translation +=
+                                            diff_vec.normalize() * vel.0 * time.delta_seconds();
+                                    }
+
+                                    if diff_vec.length() < 50.0
+                                        && mining_comp.time_between_mine.finished()
+                                        && mineable.amount > 0.
+                                    {
+                                        mining_comp.time_between_mine.reset();
+                                        mining_comp.current_carry += 1.0;
+                                        mineable.amount -= 1.0;
+                                    }
+                                }
+                            } else {
+                                //find closest base and start returning;
+                            }
+                        } else {
+                            *command = UnitCommand::Completed;
+                        }
+                    } else {
+                        *command = UnitCommand::Completed;
+                    }
+                    /*
+                    TODO: Check if mineable entity exists (if not - remove this command)
+                    -> if too far away, move towards it
+                    - if in mining range -> mine,
+                    if full -> add returncargotounit
+                                    find closest cargo_base*/
+                }
+                UnitCommand::ReturnCargoToUnit(cargo_base) => { /*TODO: check if cargo_base still exists */
+                    /*if in range -> unload cargo to base ->  then return command to completed
+                    else */
                 }
                 _ => {
                     println!("Assigned command i cannot yet do!");
@@ -496,6 +563,8 @@ fn display_command_of_selection(
                             }
                         }
                     }
+                    UnitCommand::MineEntity(mineable_entity) => {}
+                    UnitCommand::ReturnCargoToUnit(cargo_base) => {}
                     UnitCommand::Completed => {}
                 }
             }
