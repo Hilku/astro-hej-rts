@@ -1,4 +1,4 @@
-use crate::materials::Mineable;
+use crate::materials::{Mineable, MineralResources};
 use crate::movement::{Avoidance, FaceMovementDirection};
 use crate::selection::{CurrentlySelected, Selectable, Team};
 use crate::AppState;
@@ -43,6 +43,7 @@ pub struct MotherUnit;
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
+    //SPAWN RANGERS
     for i in -3..3 {
         cmd.spawn(SpatialBundle {
             transform: Transform::from_translation(Vec3::new(
@@ -148,6 +149,61 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             })
             .insert(HealthBar);
     });
+
+    //SPAWN MINERS
+    for i in -3..3 {
+        cmd.spawn(SpatialBundle {
+            transform: Transform::from_translation(Vec3::new((i as f32 % 10.) * 100., 45., 0.)),
+            ..Default::default()
+        })
+        .insert(Collider::cuboid(25.0, 25.0))
+        .insert(Sensor)
+        .insert(Selectable)
+        .insert(Velocity(150.))
+        .insert(UnitCommandList {
+            commands: Vec::new(),
+        })
+        .insert(Health {
+            current: 100.,
+            max_health: 100.,
+        })
+        .insert(Team(0))
+        .insert(AttackComponent {
+            attack_range: 50.,
+            attack_amount: 10.,
+            time_between_attacks: attack_timer.clone(),
+        })
+        .insert(Avoidance {
+            last_frame_pos: Vec3::ZERO,
+            currently_avoiding: false,
+        })
+        .insert(MiningComponent {
+            current_carry: 0.0,
+            max_carry: 5.0,
+            time_between_mine: Timer::from_seconds(0.5, TimerMode::Once),
+        })
+        .with_children(|parent| {
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/enemy_A.png"),
+                    ..Default::default()
+                })
+                .insert(FaceMovementDirection {
+                    face_to_pos: Vec3::ZERO,
+                });
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("healthbar.png"),
+                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                    sprite: Sprite {
+                        color: Color::srgba(0., 1., 0., 1.),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(HealthBar);
+        });
+    }
 }
 
 /*TODO: Spawn enemies in waves
@@ -215,7 +271,7 @@ pub enum UnitCommand {
     MoveToPos(Vec3),
     AttackEntity(Entity),
     MineEntity(Entity),
-    ReturnCargoToUnit(Entity),
+    ReturnCargoToUnit(Entity, Option<Entity>),
     Completed,
 }
 
@@ -297,7 +353,7 @@ fn command_units(
                                     .push(UnitCommand::AttackEntity(*clicked_e));
                             }
                         } else if let Ok(_mineable) = q_mineable.get(*clicked_e) {
-                            if (has_mining_comp) {
+                            if has_mining_comp {
                                 unit_command_list
                                     .commands
                                     .push(UnitCommand::MineEntity(*clicked_e));
@@ -342,6 +398,8 @@ fn move_units(
     mut face_direction_q: Query<&mut FaceMovementDirection>,
     mut commands: Commands,
     mut mineables_q: Query<&mut Mineable>,
+    mut mineral_resources: ResMut<MineralResources>,
+    mother_unit: Query<Entity, With<MotherUnit>>,
     asset_server: Res<AssetServer>,
 ) {
     for (e, vel, mut command_list, mut attack_comp, children) in units.iter_mut() {
@@ -410,6 +468,11 @@ fn move_units(
                                     [(mut tr, _global_tr), (mineable_tr, _mineable_global_tr)],
                                 ) = transforms.get_many_mut([e, *mineable_entity])
                                 {
+                                    for child in children {
+                                        if let Ok(mut face_dir) = face_direction_q.get_mut(*child) {
+                                            face_dir.face_to_pos = mineable_tr.translation;
+                                        }
+                                    }
                                     let diff_vec = mineable_tr.translation - tr.translation;
                                     if diff_vec.length() > 30.0 {
                                         tr.translation +=
@@ -426,7 +489,13 @@ fn move_units(
                                     }
                                 }
                             } else {
-                                //find closest base and start returning;
+                                for mother_unit_e in mother_unit.iter() {
+                                    *command = UnitCommand::ReturnCargoToUnit(
+                                        mother_unit_e,
+                                        Some(*mineable_entity),
+                                    );
+                                    break;
+                                }
                             }
                         } else {
                             *command = UnitCommand::Completed;
@@ -434,19 +503,35 @@ fn move_units(
                     } else {
                         *command = UnitCommand::Completed;
                     }
-                    /*
-                    TODO: Check if mineable entity exists (if not - remove this command)
-                    -> if too far away, move towards it
-                    - if in mining range -> mine,
-                    if full -> add returncargotounit
-                                    find closest cargo_base*/
                 }
-                UnitCommand::ReturnCargoToUnit(cargo_base) => { /*TODO: check if cargo_base still exists */
-                    /*if in range -> unload cargo to base ->  then return command to completed
-                    else */
-                }
-                _ => {
-                    println!("Assigned command i cannot yet do!");
+                UnitCommand::ReturnCargoToUnit(cargo_base, last_mineable) => {
+                    if let Ok([(mut tr, _global_tr), (cargo_base_tr, _cargo_base_global_tr)]) =
+                        transforms.get_many_mut([e, *cargo_base])
+                    {
+                        let diff_vec = cargo_base_tr.translation - tr.translation;
+                        for child in children {
+                            if let Ok(mut face_dir) = face_direction_q.get_mut(*child) {
+                                face_dir.face_to_pos = cargo_base_tr.translation;
+                            }
+                        }
+                        if diff_vec.length() > 30.0 {
+                            tr.translation += diff_vec.normalize() * vel.0 * time.delta_seconds();
+                        } else {
+                            if let Ok(mut mining_comp) = mining_component_q.get_mut(e) {
+                                mineral_resources.mineral += mining_comp.current_carry;
+                                mining_comp.current_carry = 0.0;
+                                if let Some(last_mine) = last_mineable {
+                                    *command = UnitCommand::MineEntity(*last_mine);
+                                } else {
+                                    *command = UnitCommand::Completed;
+                                }
+                            } else {
+                                *command = UnitCommand::Completed;
+                            }
+                        }
+                    } else {
+                        *command = UnitCommand::Completed;
+                    }
                 }
             }
         }
@@ -564,7 +649,7 @@ fn display_command_of_selection(
                         }
                     }
                     UnitCommand::MineEntity(mineable_entity) => {}
-                    UnitCommand::ReturnCargoToUnit(cargo_base) => {}
+                    UnitCommand::ReturnCargoToUnit(cargo_base, _previous_mineable) => {}
                     UnitCommand::Completed => {}
                 }
             }

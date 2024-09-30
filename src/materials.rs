@@ -1,5 +1,5 @@
 use crate::movement::MoveForward;
-use crate::selection::{Selectable, Team};
+use crate::selection::Selectable;
 use crate::units::Health;
 use crate::AppState;
 use bevy::prelude::*;
@@ -7,9 +7,21 @@ use bevy_rapier2d::prelude::*;
 
 pub struct MaterialPlugin;
 
+#[derive(Resource)]
+pub struct MineralResources {
+    pub mineral: f32,
+}
+impl Default for MineralResources {
+    fn default() -> MineralResources {
+        MineralResources { mineral: 50.0 }
+    }
+}
+
 impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::InGame), spawn_asetroids);
+        app.add_systems(PostUpdate, delete_asteroids);
+        app.init_resource::<MineralResources>();
     }
 }
 
@@ -21,7 +33,7 @@ pub struct Mineable {
 fn spawn_asetroids(mut cmd: Commands, asset_server: Res<AssetServer>) {
     for i in 0..5 {
         cmd.spawn(SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(i as f32 * 100., 300. + 100., 0.)),
+            transform: Transform::from_translation(Vec3::new(i as f32 * 100., 300. + 100., -5.0)),
             ..Default::default()
         })
         .insert(Collider::cuboid(25.0, 25.0))
@@ -47,6 +59,10 @@ fn spawn_asetroids(mut cmd: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-/*TODO: Add similar system to space miner: show visuals of mineable nodes but it should be fully managed! -> mined node should spawn a visual node ->
-that gets added to the list of the inventory component of the unit -> if returning mined amount to base -> it should remove materials from you (so we should basically just parent it under the unit's sprite when adding it to the unit)
-when returning-> check all children of the sprite -> if it has "material" component, add it to the material resource*/
+fn delete_asteroids(mut cmd: Commands, mineable_query: Query<(&Mineable, Entity)>) {
+    for (mineable, e) in mineable_query.iter() {
+        if mineable.amount <= 0.0 {
+            cmd.entity(e).despawn_recursive();
+        }
+    }
+}

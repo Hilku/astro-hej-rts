@@ -1,3 +1,4 @@
+use crate::materials::MineralResources;
 use crate::AppState;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
@@ -11,7 +12,10 @@ impl Plugin for UIPlugin {
         app.add_systems(OnEnter(AppState::Menu), setup_menu_ui);
         app.add_systems(
             Update,
-            button_system.run_if(in_state(AppState::Menu).or_else(in_state(GamePhase::Lost))),
+            (
+                button_system.run_if(in_state(AppState::Menu).or_else(in_state(GamePhase::Lost))),
+                update_ui_texts,
+            ),
         );
         app.add_systems(
             OnEnter(GamePhase::Lost),
@@ -19,6 +23,21 @@ impl Plugin for UIPlugin {
         );
     }
 }
+
+fn update_ui_texts(
+    mut resource_text: Query<&mut Text, With<ResourceText>>,
+    mineral_resource: Res<MineralResources>,
+) {
+    for mut text in resource_text.iter_mut() {
+        text.sections[1].value = format!("{}", mineral_resource.mineral);
+    }
+}
+
+#[derive(Component)]
+struct UnitText;
+
+#[derive(Component)]
+struct ResourceText;
 
 fn setup_ui(mut commands: Commands) {
     commands
@@ -33,17 +52,32 @@ fn setup_ui(mut commands: Commands) {
         })
         .insert(UIElement)
         .with_children(|parent| {
-            parent.spawn(
-                TextBundle::from_sections([
-                    TextSection::new("Units: ", TextStyle { ..default() }),
-                    TextSection::new("0", TextStyle { ..default() }),
-                ])
-                .with_style(Style {
-                    bottom: Val::Px(30.),
-                    left: Val::Px(30.),
-                    ..default()
-                }),
-            );
+            parent
+                .spawn(
+                    TextBundle::from_sections([
+                        TextSection::new("Units: ", TextStyle { ..default() }),
+                        TextSection::new("0", TextStyle { ..default() }),
+                    ])
+                    .with_style(Style {
+                        bottom: Val::Px(30.),
+                        left: Val::Px(30.),
+                        ..default()
+                    }),
+                )
+                .insert(UnitText);
+            parent
+                .spawn(
+                    TextBundle::from_sections([
+                        TextSection::new("Mineral: ", TextStyle { ..default() }),
+                        TextSection::new("0", TextStyle { ..default() }),
+                    ])
+                    .with_style(Style {
+                        bottom: Val::Px(30.),
+                        left: Val::Px(50.),
+                        ..default()
+                    }),
+                )
+                .insert(ResourceText);
         });
 }
 

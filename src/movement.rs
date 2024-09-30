@@ -1,7 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
 use crate::MainCamera;
-use bevy::math::VectorSpace;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
