@@ -3,12 +3,18 @@ use crate::AppState;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
 use bevy::prelude::*;
+use bevy::render::camera::RenderTarget;
+use bevy::render::render_resource::{
+    Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+};
+use bevy::render::view::visibility::RenderLayers;
 
 pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::InGame), setup_ui);
+        app.add_systems(OnEnter(AppState::InGame), setup_minimap);
         app.add_systems(OnEnter(AppState::Menu), setup_menu_ui);
         app.add_systems(
             Update,
@@ -84,6 +90,86 @@ fn setup_ui(mut commands: Commands) {
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
+
+#[derive(Component)]
+pub struct MinimapCamera;
+
+fn setup_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let size = Extent3d {
+        width: 256,
+        height: 256,
+        ..default()
+    };
+
+    // This is the texture that will be rendered to.
+    let mut image = Image {
+        texture_descriptor: TextureDescriptor {
+            label: None,
+            size,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Bgra8UnormSrgb,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        },
+        ..default()
+    };
+
+    // fill image.data with zeroes
+    image.resize(size);
+
+    let image_handle = images.add(image);
+
+    commands
+        .spawn(Camera2dBundle {
+            projection: OrthographicProjection {
+                near: -1000.0,
+                far: 1000.0,
+                scale: 15.0,
+                ..default()
+            },
+            camera: Camera {
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.1)),
+                target: RenderTarget::Image(image_handle.clone()),
+
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .insert(MinimapCamera)
+        .insert(UIElement)
+        .insert(RenderLayers::layer(1));
+
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(UIElement)
+        .with_children(|parent| {
+            parent.spawn(ImageBundle {
+                image: UiImage {
+                    texture: image_handle,
+                    ..Default::default()
+                },
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    bottom: Val::Px(0.0),
+                    left: Val::Px(0.0),
+                    ..default()
+                },
+                ..Default::default()
+            });
+        });
+}
 
 fn setup_menu_ui(mut commands: Commands) {
     commands

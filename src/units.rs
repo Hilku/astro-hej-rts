@@ -5,6 +5,7 @@ use crate::AppState;
 use crate::DontDestroyOnLoad;
 use crate::MainCamera;
 use bevy::prelude::*;
+use bevy::render::view::visibility::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -22,6 +23,7 @@ impl Plugin for UnitsPlugin {
                 move_units,
                 bullet_behaviour,
                 tick_attack_timers,
+                handle_aggressive_pigs,
             ),
         );
         app.add_systems(
@@ -94,6 +96,17 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(HealthBar);
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/meteor_small.png"),
+                    sprite: Sprite {
+                        color: Color::srgba(0., 1., 0., 1.),
+                        custom_size: Some(Vec2::new(100., 100.)),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(RenderLayers::layer(1));
         });
     }
     //SPAWNMOTHERSHIP
@@ -148,6 +161,17 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                 ..Default::default()
             })
             .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    custom_size: Some(Vec2::new(140., 140.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
     });
 
     //SPAWN MINERS
@@ -202,6 +226,17 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(HealthBar);
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/meteor_small.png"),
+                    sprite: Sprite {
+                        color: Color::srgba(0., 1., 0., 1.),
+                        custom_size: Some(Vec2::new(100., 100.)),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(RenderLayers::layer(1));
         });
     }
 }
@@ -209,6 +244,9 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
 /*TODO: Spawn enemies in waves
 They should attack closest enemies
 */
+#[derive(Component)]
+pub struct AggressiveLilPig;
+
 fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
@@ -224,8 +262,8 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             commands: Vec::new(),
         })
         .insert(Health {
-            current: 100.,
-            max_health: 100.,
+            current: 50.,
+            max_health: 50.,
         })
         .insert(Velocity(150.))
         .insert(Team(1))
@@ -238,6 +276,7 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
             last_frame_pos: Vec3::ZERO,
             currently_avoiding: false,
         })
+        .insert(AggressiveLilPig)
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
@@ -262,7 +301,52 @@ fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(HealthBar);
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/meteor_small.png"),
+                    sprite: Sprite {
+                        color: Color::srgba(1., 0., 0., 1.),
+                        custom_size: Some(Vec2::new(100., 100.)),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(RenderLayers::layer(1));
         });
+    }
+}
+
+fn handle_aggressive_pigs(
+    mut aggressive_q: Query<(&mut UnitCommandList, Entity), With<AggressiveLilPig>>,
+    all_units: Query<(&Transform, &Team, Entity)>,
+) {
+    for (mut command_list, e) in aggressive_q.iter_mut() {
+        if command_list.commands.len() == 0 {
+            let mut aggressive_pig_pos = None;
+            let mut pig_team_nr = None;
+            if let Ok((pig_tr, pig_team, _e)) = all_units.get(e) {
+                aggressive_pig_pos = Some(pig_tr.translation);
+                pig_team_nr = Some(pig_team.0);
+            }
+            if aggressive_pig_pos != None {
+                let mut closest_enemy_unit: (Option<Entity>, f32) = (None, f32::MAX);
+                for (unit_tr, unit_team, unit_entity) in all_units.iter() {
+                    if unit_team.0 != pig_team_nr.unwrap() {
+                        let diff_vec = unit_tr.translation - aggressive_pig_pos.unwrap();
+                        if diff_vec.length() < closest_enemy_unit.1 {
+                            closest_enemy_unit.1 = diff_vec.length();
+                            closest_enemy_unit.0 = Some(unit_entity);
+                        }
+                    }
+                }
+
+                if let Some(enemy_entity) = closest_enemy_unit.0 {
+                    command_list
+                        .commands
+                        .push(UnitCommand::AttackEntity(enemy_entity));
+                }
+            }
+        }
     }
 }
 

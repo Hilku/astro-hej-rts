@@ -3,6 +3,7 @@ use crate::selection::Selectable;
 use crate::units::Health;
 use crate::AppState;
 use bevy::prelude::*;
+use bevy::render::view::visibility::RenderLayers;
 use bevy_rapier2d::prelude::*;
 
 pub struct MaterialPlugin;
@@ -55,6 +56,17 @@ fn spawn_asetroids(mut cmd: Commands, asset_server: Res<AssetServer>) {
                 },
                 ..Default::default()
             });
+            parent
+                .spawn(SpriteBundle {
+                    texture: asset_server.load("units/meteor_squareDetailedLarge.png"),
+                    sprite: Sprite {
+                        color: Color::srgba(1., 1., 0., 1.),
+                        custom_size: Some(Vec2::new(150., 150.)),
+                        ..default()
+                    },
+                    ..Default::default()
+                })
+                .insert(RenderLayers::layer(1));
         });
     }
 }

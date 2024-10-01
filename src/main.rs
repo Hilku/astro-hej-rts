@@ -5,6 +5,7 @@ mod selection;
 mod ui;
 mod units;
 use bevy::render::camera::ClearColorConfig;
+use bevy::render::view::visibility::RenderLayers;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_rapier2d::prelude::*;
 use selection::Team;
@@ -36,12 +37,13 @@ impl Plugin for StartupPlugin {
         app.add_systems(OnExit(AppState::InGame), despawn_everything);
         app.add_systems(OnExit(AppState::Menu), despawn_everything);
         app.add_systems(Update, detect_lose.run_if(in_state(GamePhase::Playing)));
+        app.add_systems(Update, draw_rect_for_main_cam);
         app.add_systems(OnEnter(GamePhase::Playing), cursor_grab);
         app.add_systems(OnExit(GamePhase::Playing), cursor_ungrab);
     }
 }
 
-fn build_world(mut cmd: Commands) {
+fn build_world(mut cmd: Commands, mut config_store: ResMut<GizmoConfigStore>) {
     cmd.spawn(Camera2dBundle {
         projection: OrthographicProjection {
             near: -1000.0,
@@ -57,6 +59,23 @@ fn build_world(mut cmd: Commands) {
     })
     .insert(MainCamera)
     .insert(DontDestroyOnLoad);
+    let (my_config, _) = config_store.config_mut::<MiniMapGizmos>();
+    my_config.render_layers = RenderLayers::layer(1);
+}
+
+fn draw_rect_for_main_cam(
+    mut minimap_gizmos: Gizmos<MiniMapGizmos>,
+    camera_q: Query<(&Camera, &Transform), With<MainCamera>>,
+) {
+    for (cam, cam_tr) in camera_q.iter() {
+        let gizmo_rect = cam.logical_viewport_rect().unwrap();
+        minimap_gizmos.rect(
+            cam_tr.translation,
+            Quat::IDENTITY,
+            Vec2::new(gizmo_rect.width(), gizmo_rect.height()),
+            Color::srgb(0., 1., 0.),
+        );
+    }
 }
 
 fn main() {
@@ -72,9 +91,12 @@ fn main() {
         .add_plugins(units::UnitsPlugin)
         .add_plugins(movement::MovementPlugin)
         .add_plugins(materials::MaterialPlugin)
+        .init_gizmo_group::<MiniMapGizmos>()
         .run();
 }
-
+// We can create our own gizmo config group!
+#[derive(Default, Reflect, GizmoConfigGroup)]
+struct MiniMapGizmos {}
 #[derive(Component)]
 struct DontDestroyOnLoad;
 
