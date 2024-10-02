@@ -216,8 +216,8 @@ fn spawn_melee_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
         commands: Vec::new(),
     })
     .insert(Health {
-        current: 50.,
-        max_health: 50.,
+        current: 70.,
+        max_health: 70.,
     })
     .insert(Velocity(150.))
     .insert(Team(1))
@@ -283,8 +283,8 @@ fn spawn_ranged_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<As
         commands: Vec::new(),
     })
     .insert(Health {
-        current: 50.,
-        max_health: 50.,
+        current: 70.,
+        max_health: 70.,
     })
     .insert(Velocity(150.))
     .insert(Team(1))
@@ -1037,8 +1037,8 @@ fn spawn_ranged_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
         commands: Vec::new(),
     })
     .insert(Health {
-        current: 100.,
-        max_health: 100.,
+        current: 150.,
+        max_health: 150.,
     })
     .insert(Team(0))
     .insert(AttackComponent {
@@ -1100,8 +1100,8 @@ fn spawn_miner_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Asse
         commands: Vec::new(),
     })
     .insert(Health {
-        current: 100.,
-        max_health: 100.,
+        current: 150.,
+        max_health: 150.,
     })
     .insert(Team(0))
     .insert(AttackComponent {
@@ -1167,8 +1167,8 @@ fn spawn_melee_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Asse
         commands: Vec::new(),
     })
     .insert(Health {
-        current: 150.,
-        max_health: 150.,
+        current: 200.,
+        max_health: 200.,
     })
     .insert(Team(0))
     .insert(AttackComponent {

@@ -1,6 +1,6 @@
 use crate::materials::MineralResources;
 use crate::selection::Team;
-use crate::units::BuildOrder;
+use crate::units::BuildQueue;
 use crate::AppState;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
@@ -24,6 +24,7 @@ impl Plugin for UIPlugin {
                 button_system.run_if(in_state(AppState::Menu).or_else(in_state(GamePhase::Lost))),
                 update_ui_texts,
                 update_unit_ui_texts,
+                update_progress_bar,
             ),
         );
         app.add_systems(
@@ -67,6 +68,15 @@ struct ResourceText;
 struct BuildProgressBar;
 #[derive(Component)]
 pub struct BuildQueueParent;
+
+fn update_progress_bar(
+    mut progress_bar: Query<&mut Style, With<BuildProgressBar>>,
+    build_queue: Res<BuildQueue>,
+) {
+    for mut bar_style in progress_bar.iter_mut() {
+        bar_style.width = Val::Px(0.0.lerp(256.0, build_queue.build_time.fraction()));
+    }
+}
 
 pub fn spawn_build_order_card(
     commands: &mut Commands,
@@ -191,7 +201,11 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 #[derive(Component)]
 pub struct MinimapCamera;
 
-fn setup_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+fn setup_minimap(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
+) {
     let size = Extent3d {
         width: 256,
         height: 256,
@@ -276,6 +290,57 @@ fn setup_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
                     ..Default::default()
                 })
                 .insert(BuildProgressBar);
+        });
+
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                left: Val::Px(256.0),
+                align_items: AlignItems::End,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(UIElement)
+        .with_children(|parent| {
+            parent.spawn(ImageBundle {
+                image: UiImage {
+                    texture: asset_server.load("miner_ally_card.png"),
+                    ..default()
+                },
+                style: Style {
+                    width: Val::Px(80.0),
+                    height: Val::Px(80.0),
+                    ..default()
+                },
+                ..Default::default()
+            });
+            parent.spawn(ImageBundle {
+                image: UiImage {
+                    texture: asset_server.load("melee_ally_card.png"),
+                    ..default()
+                },
+                style: Style {
+                    width: Val::Px(80.0),
+                    height: Val::Px(80.0),
+                    ..default()
+                },
+                ..Default::default()
+            });
+            parent.spawn(ImageBundle {
+                image: UiImage {
+                    texture: asset_server.load("ranged_ally_card.png"),
+                    ..default()
+                },
+                style: Style {
+                    width: Val::Px(80.0),
+                    height: Val::Px(80.0),
+                    ..default()
+                },
+                ..Default::default()
+            });
         });
 }
 

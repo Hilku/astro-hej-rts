@@ -1,7 +1,5 @@
 TODO:
 
-make unit building (when sleecting mothership - display UI: MINER, RANGED HUNTER, MELEE HUNTER -> display progress bar, display queue
-
 add goal: mine as much as you can - then escape! (land mothership at place) - your score: the remaining minerals
 
 make it prettier (background for menu, rect for map)
@@ -16,6 +14,8 @@ add sounds
 add particles (mining, shooting)
 
 add map navigation and control groups!
+
+make enemy smarter: when getting attacked and current target is far away -> then sawp to it! 
 
 
 RESET MINERAL RESOURCES AT STARTUP!
