@@ -4,6 +4,7 @@ use crate::selection::{CurrentlySelected, Selectable, Team};
 use crate::AppState;
 use crate::DontDestroyOnLoad;
 use crate::MainCamera;
+use crate::MapBoundaries;
 use bevy::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
 use bevy::window::PrimaryWindow;
@@ -15,7 +16,10 @@ pub struct UnitsPlugin;
 impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_command_highlighters); //Temp
-        app.add_systems(OnEnter(AppState::InGame), (spawn_units, spawn_enemy_units));
+        app.add_systems(
+            OnEnter(AppState::InGame),
+            (spawn_units, spawn_enemy_units, reset_mastermind),
+        );
         app.add_systems(
             Update,
             (
@@ -24,6 +28,7 @@ impl Plugin for UnitsPlugin {
                 bullet_behaviour,
                 tick_attack_timers,
                 handle_aggressive_pigs,
+                enemy_mastermind,
             ),
         );
         app.add_systems(
@@ -36,11 +41,165 @@ impl Plugin for UnitsPlugin {
             ),
         );
         app.add_event::<DamageEvent>();
+        app.init_resource::<EnemyBrain>();
     }
 }
 
 #[derive(Component)]
 pub struct MotherUnit;
+
+//TODO: ADD ENEMYBRAIN IT SHOULD SPAWN WAVES OF ENEMIES
+
+#[derive(Resource)]
+pub struct EnemyBrain {
+    pub current_wave: i32,
+    pub time_between_wave: Timer,
+}
+impl Default for EnemyBrain {
+    fn default() -> EnemyBrain {
+        EnemyBrain {
+            current_wave: 0,
+            time_between_wave: Timer::from_seconds(20.0, TimerMode::Once),
+        }
+    }
+}
+
+fn reset_mastermind(mut enemy_brain: ResMut<EnemyBrain>) {
+    *enemy_brain = EnemyBrain::default();
+}
+
+fn enemy_mastermind(
+    mut enemy_brain: ResMut<EnemyBrain>,
+    boundaries: Res<MapBoundaries>,
+    time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    enemy_brain.time_between_wave.tick(time.delta());
+    if enemy_brain.time_between_wave.finished() {
+        enemy_brain.time_between_wave.reset();
+
+        enemy_brain.current_wave += 1;
+        let number_of_units = (enemy_brain.current_wave as f64).sqrt();
+        let column_count = number_of_units.ceil() as i64;
+
+        let mut column_index = 0;
+        let mut row_index = 0;
+        for _ in 0..enemy_brain.current_wave {
+            column_index += 1;
+            if column_index >= column_count {
+                row_index += 1;
+                column_index = 0;
+            }
+
+            spawn_melee_enemy(
+                &mut commands,
+                Vec3::new(0.0, boundaries.y_boundaries.y + 20.0, 0.0)
+                    + Vec3::new(80., 0., 0.) * column_index as f32
+                    + Vec3::new(0., -80., 0.) * row_index as f32,
+                &asset_server,
+            );
+        }
+    }
+}
+
+fn spawn_melee_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(spawn_pos),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(25.0, 25.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 50.,
+        max_health: 50.,
+    })
+    .insert(Velocity(150.))
+    .insert(Team(1))
+    .insert(AttackComponent {
+        attack_range: 100.,
+        attack_amount: 10.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
+    .insert(AggressiveLilPig)
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/enemy_A.png"),
+                sprite: Sprite {
+                    color: Color::srgb(1., 0.5, 0.5),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(1., 0., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(1., 0., 0., 1.),
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
+    });
+}
+fn spawn_bullet(
+    cmd: &mut Commands,
+    damage: f32,
+    spawn_pos: Vec3,
+    shooter: Entity,
+    target: Entity,
+    target_pos: Vec3,
+    asset_server: &Res<AssetServer>,
+) {
+    let mut start_transform = Transform::from_translation(spawn_pos);
+    start_transform.scale = Vec3::new(0.1, 0.3, 1.);
+
+    let diff = target_pos - spawn_pos;
+    let angle = diff.y.atan2(diff.x) - FRAC_PI_2;
+    start_transform.rotation = Quat::from_axis_angle(Vec3::Z, angle);
+
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("effect_yellow.png"),
+        transform: start_transform,
+        ..Default::default()
+    })
+    .insert(FlyingBullet {
+        target: target,
+        damage: damage,
+        speed: 1000.,
+        shooter: shooter,
+    })
+    .insert(FaceMovementDirection {
+        face_to_pos: target_pos,
+    });
+}
 
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
@@ -209,7 +368,7 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
         .with_children(|parent| {
             parent
                 .spawn(SpriteBundle {
-                    texture: asset_server.load("units/enemy_A.png"),
+                    texture: asset_server.load("units/station_A.png"),
                     ..Default::default()
                 })
                 .insert(FaceMovementDirection {
@@ -558,12 +717,12 @@ fn move_units(
                                         }
                                     }
                                     let diff_vec = mineable_tr.translation - tr.translation;
-                                    if diff_vec.length() > 30.0 {
+                                    if diff_vec.length() > 50.0 {
                                         tr.translation +=
                                             diff_vec.normalize() * vel.0 * time.delta_seconds();
                                     }
 
-                                    if diff_vec.length() < 50.0
+                                    if diff_vec.length() < 70.0
                                         && mining_comp.time_between_mine.finished()
                                         && mineable.amount > 0.
                                     {
@@ -582,7 +741,11 @@ fn move_units(
                                 }
                             }
                         } else {
-                            *command = UnitCommand::Completed;
+                            //RETURN TO MOTHER WHEN ASTEROID IS OFF
+                            for mother_unit_e in mother_unit.iter() {
+                                *command = UnitCommand::ReturnCargoToUnit(mother_unit_e, None);
+                                break;
+                            }
                         }
                     } else {
                         *command = UnitCommand::Completed;
@@ -598,7 +761,7 @@ fn move_units(
                                 face_dir.face_to_pos = cargo_base_tr.translation;
                             }
                         }
-                        if diff_vec.length() > 30.0 {
+                        if diff_vec.length() > 40.0 {
                             tr.translation += diff_vec.normalize() * vel.0 * time.delta_seconds();
                         } else {
                             if let Ok(mut mining_comp) = mining_component_q.get_mut(e) {
@@ -620,38 +783,6 @@ fn move_units(
             }
         }
     }
-}
-
-fn spawn_bullet(
-    cmd: &mut Commands,
-    damage: f32,
-    spawn_pos: Vec3,
-    shooter: Entity,
-    target: Entity,
-    target_pos: Vec3,
-    asset_server: &Res<AssetServer>,
-) {
-    let mut start_transform = Transform::from_translation(spawn_pos);
-    start_transform.scale = Vec3::new(0.1, 0.3, 1.);
-
-    let diff = target_pos - spawn_pos;
-    let angle = diff.y.atan2(diff.x) - FRAC_PI_2;
-    start_transform.rotation = Quat::from_axis_angle(Vec3::Z, angle);
-
-    cmd.spawn(SpriteBundle {
-        texture: asset_server.load("effect_yellow.png"),
-        transform: start_transform,
-        ..Default::default()
-    })
-    .insert(FlyingBullet {
-        target: target,
-        damage: damage,
-        speed: 1000.,
-        shooter: shooter,
-    })
-    .insert(FaceMovementDirection {
-        face_to_pos: target_pos,
-    });
 }
 
 #[derive(Component)]
@@ -691,8 +822,9 @@ fn bullet_behaviour(
 
 fn display_command_of_selection(
     currently_selected: Res<CurrentlySelected>,
-    q_unit_command_list: Query<(&UnitCommandList, &Transform), Without<CommandHighlighter>>,
+    q_unit_command_list: Query<(&UnitCommandList, Entity), Without<CommandHighlighter>>,
     mut command_highlighters: Query<&mut Transform, With<CommandHighlighter>>,
+    q_tr: Query<&Transform, Without<CommandHighlighter>>,
     mut gizmos: Gizmos,
 ) {
     for mut tr in command_highlighters.iter_mut() {
@@ -701,10 +833,26 @@ fn display_command_of_selection(
 
     let mut all_highlighters = command_highlighters.iter_mut();
     for selected in currently_selected.ent.iter() {
-        if let Ok((command, unit_tr)) = q_unit_command_list.get(*selected) {
+        if let Ok((command, unit_e)) = q_unit_command_list.get(*selected) {
             let mut last_pos = None;
-            if command.commands.len() > 1 {
-                last_pos = Some(unit_tr.translation);
+            if command.commands.len() == 1 {
+                match &command.commands[0] {
+                    UnitCommand::ReturnCargoToUnit(_, _) => {
+                        if let Ok(unit_tr) = q_tr.get(unit_e) {
+                            last_pos = Some(unit_tr.translation);
+                        }
+                    }
+                    UnitCommand::MineEntity(_) => {
+                        if let Ok(unit_tr) = q_tr.get(unit_e) {
+                            last_pos = Some(unit_tr.translation);
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                if let Ok(unit_tr) = q_tr.get(unit_e) {
+                    last_pos = Some(unit_tr.translation);
+                }
             }
             for c in &command.commands {
                 match c {
@@ -719,7 +867,7 @@ fn display_command_of_selection(
                     }
                     UnitCommand::AttackEntity(enemy_entity) => {
                         if let Some(mut highlighter_tr) = all_highlighters.next() {
-                            if let Ok((_, enemy_tr)) = q_unit_command_list.get(*enemy_entity) {
+                            if let Ok(enemy_tr) = q_tr.get(*enemy_entity) {
                                 highlighter_tr.translation =
                                     enemy_tr.translation - Vec3::new(0., 0., 1.);
                                 if let Some(last_p) = last_pos {
@@ -732,8 +880,36 @@ fn display_command_of_selection(
                             }
                         }
                     }
-                    UnitCommand::MineEntity(mineable_entity) => {}
-                    UnitCommand::ReturnCargoToUnit(cargo_base, _previous_mineable) => {}
+                    UnitCommand::MineEntity(mineable_entity) => {
+                        if let Some(mut highlighter_tr) = all_highlighters.next() {
+                            if let Ok(enemy_tr) = q_tr.get(*mineable_entity) {
+                                highlighter_tr.translation =
+                                    enemy_tr.translation - Vec3::new(0., 0., 1.);
+                                if let Some(last_p) = last_pos {
+                                    gizmos.linestrip(
+                                        [last_p, enemy_tr.translation],
+                                        Color::srgba(0., 1., 0., 0.1),
+                                    );
+                                }
+                                last_pos = Some(enemy_tr.translation);
+                            }
+                        }
+                    }
+                    UnitCommand::ReturnCargoToUnit(cargo_base, _previous_mineable) => {
+                        if let Some(mut highlighter_tr) = all_highlighters.next() {
+                            if let Ok(enemy_tr) = q_tr.get(*cargo_base) {
+                                highlighter_tr.translation =
+                                    enemy_tr.translation - Vec3::new(0., 0., 1.);
+                                if let Some(last_p) = last_pos {
+                                    gizmos.linestrip(
+                                        [last_p, enemy_tr.translation],
+                                        Color::srgba(0., 1., 0., 0.1),
+                                    );
+                                }
+                                last_pos = Some(enemy_tr.translation);
+                            }
+                        }
+                    }
                     UnitCommand::Completed => {}
                 }
             }

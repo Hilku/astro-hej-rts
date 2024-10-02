@@ -31,15 +31,30 @@ enum GamePhase {
     Lost,
 }
 
+#[derive(Resource)]
+pub struct MapBoundaries {
+    pub x_boundaries: Vec2,
+    pub y_boundaries: Vec2,
+}
+impl Default for MapBoundaries {
+    fn default() -> MapBoundaries {
+        MapBoundaries {
+            x_boundaries: Vec2::new(-1900.0, 1900.0),
+            y_boundaries: Vec2::new(-1900.0, 1900.0),
+        }
+    }
+}
+
 impl Plugin for StartupPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, build_world);
         app.add_systems(OnExit(AppState::InGame), despawn_everything);
         app.add_systems(OnExit(AppState::Menu), despawn_everything);
         app.add_systems(Update, detect_lose.run_if(in_state(GamePhase::Playing)));
-        app.add_systems(Update, draw_rect_for_main_cam);
+        app.add_systems(Update, (draw_rect_for_main_cam, keep_camera_in_bounderies));
         app.add_systems(OnEnter(GamePhase::Playing), cursor_grab);
         app.add_systems(OnExit(GamePhase::Playing), cursor_ungrab);
+        app.init_resource::<MapBoundaries>();
     }
 }
 
@@ -85,7 +100,7 @@ fn main() {
         .add_sub_state::<GamePhase>()
         .add_plugins(StartupPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        //  .add_plugins(RapierDebugRenderPlugin::default())
+        //.add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(selection::SelectionPlugin)
         .add_plugins(ui::UIPlugin)
         .add_plugins(units::UnitsPlugin)
@@ -138,6 +153,28 @@ fn cursor_ungrab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
     let mut primary_window = q_windows.single_mut();
 
     primary_window.cursor.grab_mode = CursorGrabMode::None;
+}
+
+fn keep_camera_in_bounderies(
+    mut camera_q: Query<(&Camera, &mut Transform), With<MainCamera>>,
+    boundaries: Res<MapBoundaries>,
+) {
+    for (cam, mut cam_tr) in camera_q.iter_mut() {
+        let cam_rect = cam.logical_viewport_rect().unwrap();
+        let half_width = cam_rect.width() / 2.0;
+        let half_height = cam_rect.height() / 2.0;
+        //TODO: ADD CAMERA FRUSTRUM TO IT - so we dont boundarie the middle of the camera!
+        if cam_tr.translation.x + half_width > boundaries.x_boundaries.y {
+            cam_tr.translation.x = boundaries.x_boundaries.y - half_width;
+        } else if cam_tr.translation.x - half_width < boundaries.x_boundaries.x {
+            cam_tr.translation.x = boundaries.x_boundaries.x + half_width;
+        }
+        if cam_tr.translation.y + half_height > boundaries.y_boundaries.y {
+            cam_tr.translation.y = boundaries.y_boundaries.y - half_height;
+        } else if cam_tr.translation.y - half_height < boundaries.y_boundaries.x {
+            cam_tr.translation.y = boundaries.y_boundaries.x + half_height;
+        }
+    }
 }
 
 /* TODO: add goal! mine 10000 rocks (as many rocks as you can in x time)
