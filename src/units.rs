@@ -265,7 +265,7 @@ fn spawn_melee_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
         current: 70.,
         max_health: 70.,
     })
-    .insert(Velocity(100.))
+    .insert(Velocity(120.))
     .insert(Team(1))
     .insert(AttackComponent {
         attack_range: 100.,
@@ -332,7 +332,7 @@ fn spawn_ranged_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<As
         current: 70.,
         max_health: 70.,
     })
-    .insert(Velocity(90.))
+    .insert(Velocity(100.))
     .insert(Team(1))
     .insert(AttackComponent {
         attack_range: 200.,
@@ -347,7 +347,7 @@ fn spawn_ranged_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<As
     .with_children(|parent| {
         parent
             .spawn(SpriteBundle {
-                texture: asset_server.load("units/enemy_A.png"),
+                texture: asset_server.load("units/ship_basic.png"),
                 sprite: Sprite {
                     color: Color::srgb(1., 0.5, 0.5),
                     ..default()

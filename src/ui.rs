@@ -2,6 +2,7 @@ use crate::materials::MineralResources;
 use crate::selection::Team;
 use crate::units::BuildQueue;
 use crate::AppState;
+use crate::EndGameTimer;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
 use bevy::prelude::*;
@@ -31,6 +32,7 @@ impl Plugin for UIPlugin {
                 update_unit_ui_texts,
                 update_progress_bar,
                 run_down_welcome_text.run_if(in_state(AppState::InGame)),
+                show_extraction_timer.run_if(in_state(AppState::InGame)),
             ),
         );
         app.add_systems(
@@ -153,6 +155,9 @@ pub fn spawn_build_order_card(
     return entity;
 }
 
+#[derive(Component)]
+struct ExtractionTimer;
+
 fn setup_ui(mut commands: Commands) {
     commands
         .spawn(NodeBundle {
@@ -199,6 +204,27 @@ fn setup_ui(mut commands: Commands) {
                     }),
                 )
                 .insert(ResourceText);
+            parent.spawn(
+                TextBundle::from_sections([TextSection::new(" | ", TextStyle { ..default() })])
+                    .with_style(Style {
+                        top: Val::Px(20.),
+                        left: Val::Px(30.),
+                        ..default()
+                    }),
+            );
+            parent
+                .spawn(
+                    TextBundle::from_sections([
+                        TextSection::new("Time until extraction: ", TextStyle { ..default() }),
+                        TextSection::new("0", TextStyle { ..default() }),
+                    ])
+                    .with_style(Style {
+                        top: Val::Px(20.),
+                        left: Val::Px(30.),
+                        ..default()
+                    }),
+                )
+                .insert(ExtractionTimer);
         });
     commands
         .spawn(NodeBundle {
@@ -754,5 +780,14 @@ Good luck Captain...."#,
             ),
             time_after_all_characters: Timer::from_seconds(8.0, TimerMode::Once),
         }
+    }
+}
+
+fn show_extraction_timer(
+    mut extraction_timer_text: Query<&mut Text, With<ExtractionTimer>>,
+    time_left: Res<EndGameTimer>,
+) {
+    for mut txt in extraction_timer_text.iter_mut() {
+        txt.sections[1].value = format!("{:.0}", time_left.0.remaining_secs());
     }
 }

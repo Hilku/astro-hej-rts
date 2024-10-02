@@ -138,7 +138,11 @@ fn despawn_everything(
     mut commands: Commands,
     entities: Query<Entity, (Without<Parent>, Without<DontDestroyOnLoad>, Without<Window>)>,
     mut end_game_timer: ResMut<EndGameTimer>,
+    mut camera: Query<&mut Transform, With<MainCamera>>,
 ) {
+    for mut tr in camera.iter_mut() {
+        tr.translation = Vec3::ZERO;
+    }
     for e in &entities {
         commands.entity(e).despawn_recursive();
     }
