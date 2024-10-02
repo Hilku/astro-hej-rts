@@ -25,7 +25,7 @@ impl Plugin for MaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(AppState::InGame),
-            (spawn_asetroids, reset_mastermind),
+            (spawn_asetroids, reset_mastermind, reset_materials),
         );
         app.add_systems(PostUpdate, delete_asteroids);
         app.add_systems(Update, asteroid_mastermind);
@@ -54,6 +54,11 @@ impl Default for AsteroidBrain {
 fn reset_mastermind(mut asteroid_brain: ResMut<AsteroidBrain>) {
     *asteroid_brain = AsteroidBrain::default();
 }
+
+fn reset_materials(mut materials: ResMut<MineralResources>) {
+    *materials = MineralResources::default();
+}
+
 fn asteroid_mastermind(
     mut enemy_brain: ResMut<AsteroidBrain>,
     boundaries: Res<MapBoundaries>,

@@ -1,6 +1,7 @@
 use crate::materials::{Mineable, MineralResources};
 use crate::movement::{Avoidance, FaceMovementDirection};
 use crate::selection::{CurrentlySelected, Selectable, Team};
+use crate::ui::{spawn_build_order_card, BuildQueueParent};
 use crate::AppState;
 use crate::DontDestroyOnLoad;
 use crate::MainCamera;
@@ -9,6 +10,8 @@ use bevy::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
+use rand::Rng;
+use std::collections::VecDeque;
 use std::f32::consts::FRAC_PI_2;
 
 pub struct UnitsPlugin;
@@ -25,8 +28,11 @@ impl Plugin for UnitsPlugin {
                 bullet_behaviour,
                 tick_attack_timers,
                 handle_aggressive_pigs,
+                handle_mildly_aggressive_pigs,
                 enemy_mastermind,
-            ),
+                handle_add_to_build_queue,
+                build_requested_units,
+            ), //TODO: ONLY RUN THESE SYSTEMS IF APPSTATE == INGAME
         );
         app.add_systems(
             PostUpdate,
@@ -39,6 +45,7 @@ impl Plugin for UnitsPlugin {
         );
         app.add_event::<DamageEvent>();
         app.init_resource::<EnemyBrain>();
+        app.init_resource::<BuildQueue>();
     }
 }
 
@@ -57,6 +64,101 @@ impl Default for EnemyBrain {
         EnemyBrain {
             current_wave: 0,
             time_between_wave: Timer::from_seconds(20.0, TimerMode::Once),
+        }
+    }
+}
+
+pub enum BuildOrder {
+    Miner(Entity),
+    Melee(Entity),
+    Ranged(Entity),
+}
+
+#[derive(Resource)]
+pub struct BuildQueue {
+    pub queue: VecDeque<BuildOrder>,
+    pub build_time: Timer,
+    pub max_request: usize,
+}
+impl Default for BuildQueue {
+    fn default() -> BuildQueue {
+        BuildQueue {
+            queue: VecDeque::new(),
+            build_time: Timer::from_seconds(5.0, TimerMode::Once),
+            max_request: 5,
+        }
+    }
+}
+
+fn handle_add_to_build_queue(
+    mut build_queue: ResMut<BuildQueue>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut minerals: ResMut<MineralResources>,
+    mut commands: Commands,
+    query_of_card_parent: Query<Entity, With<BuildQueueParent>>,
+    asset_server: Res<AssetServer>,
+) {
+    for card_parent in query_of_card_parent.iter() {
+        if build_queue.queue.len() < build_queue.max_request {
+            if keyboard_input.just_pressed(KeyCode::KeyQ) && minerals.mineral >= 10.0 {
+                minerals.mineral -= 10.0;
+                if let Some(card_entity) =
+                    spawn_build_order_card(&mut commands, card_parent, &asset_server, 0)
+                {
+                    build_queue.queue.push_back(BuildOrder::Miner(card_entity));
+                }
+            }
+            if keyboard_input.just_pressed(KeyCode::KeyW) && minerals.mineral >= 30.0 {
+                minerals.mineral -= 30.0;
+                if let Some(card_entity) =
+                    spawn_build_order_card(&mut commands, card_parent, &asset_server, 1)
+                {
+                    build_queue.queue.push_back(BuildOrder::Melee(card_entity));
+                }
+            }
+            if keyboard_input.just_pressed(KeyCode::KeyE) && minerals.mineral >= 60.0 {
+                minerals.mineral -= 60.0;
+                if let Some(card_entity) =
+                    spawn_build_order_card(&mut commands, card_parent, &asset_server, 2)
+                {
+                    build_queue.queue.push_back(BuildOrder::Ranged(card_entity));
+                }
+            }
+        }
+    }
+}
+
+fn build_requested_units(
+    mut cmd: Commands,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    mother_unit: Query<&Transform, With<MotherUnit>>,
+    mut build_queue: ResMut<BuildQueue>,
+) {
+    if build_queue.queue.len() > 0 {
+        build_queue.build_time.tick(time.delta());
+        if build_queue.build_time.finished() {
+            build_queue.build_time.reset();
+
+            let mut rng = rand::thread_rng();
+            for unit in mother_unit.iter() {
+                let spawn_pos = unit.translation + Vec3::new(rng.gen_range(-30.0..30.0), 60.0, 0.0);
+
+                match build_queue.queue.pop_front().unwrap() {
+                    BuildOrder::Miner(ent) => {
+                        cmd.entity(ent).despawn_recursive();
+                        spawn_miner_ally(&mut cmd, spawn_pos, &asset_server);
+                    }
+                    BuildOrder::Melee(ent) => {
+                        cmd.entity(ent).despawn_recursive();
+                        spawn_melee_ally(&mut cmd, spawn_pos, &asset_server)
+                    }
+                    BuildOrder::Ranged(ent) => {
+                        cmd.entity(ent).despawn_recursive();
+                        spawn_ranged_ally(&mut cmd, spawn_pos, &asset_server);
+                    }
+                }
+            }
         }
     }
 }
@@ -354,12 +456,49 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-/*TODO: Spawn enemies in waves
-They should attack closest enemies
-*/
 #[derive(Component)]
 pub struct AggressiveLilPig;
 
+#[derive(Component)]
+pub struct MildAggression;
+
+//ATTACK ENEMIES WHEN IN 400.0 range
+fn handle_mildly_aggressive_pigs(
+    mut aggressive_q: Query<(&mut UnitCommandList, Entity), With<MildAggression>>,
+    all_units: Query<(&Transform, &Team, Entity)>,
+) {
+    for (mut command_list, e) in aggressive_q.iter_mut() {
+        if command_list.commands.len() == 0 {
+            let mut aggressive_pig_pos = None;
+            let mut pig_team_nr = None;
+            if let Ok((pig_tr, pig_team, _e)) = all_units.get(e) {
+                aggressive_pig_pos = Some(pig_tr.translation);
+                pig_team_nr = Some(pig_team.0);
+            }
+            if aggressive_pig_pos != None {
+                let mut closest_enemy_unit: (Option<Entity>, f32) = (None, f32::MAX);
+                for (unit_tr, unit_team, unit_entity) in all_units.iter() {
+                    if unit_team.0 != pig_team_nr.unwrap() {
+                        let diff_vec = unit_tr.translation - aggressive_pig_pos.unwrap();
+                        if diff_vec.length() < closest_enemy_unit.1 {
+                            closest_enemy_unit.1 = diff_vec.length();
+                            closest_enemy_unit.0 = Some(unit_entity);
+                        }
+                    }
+                }
+
+                if let Some(enemy_entity) = closest_enemy_unit.0 {
+                    if closest_enemy_unit.1 < 400.0 {
+                        command_list
+                            .commands
+                            .push(UnitCommand::AttackEntity(enemy_entity));
+                    }
+                }
+            }
+        }
+    }
+}
+//ATTACK CLOSEST ENEMY NO MATTER HOW FAR AWAY
 fn handle_aggressive_pigs(
     mut aggressive_q: Query<(&mut UnitCommandList, Entity), With<AggressiveLilPig>>,
     all_units: Query<(&Transform, &Team, Entity)>,
@@ -911,6 +1050,7 @@ fn spawn_ranged_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
         last_frame_pos: Vec3::ZERO,
         currently_avoiding: false,
     })
+    .insert(MildAggression)
     .with_children(|parent| {
         parent
             .spawn(SpriteBundle {
@@ -982,6 +1122,69 @@ fn spawn_miner_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Asse
         parent
             .spawn(SpriteBundle {
                 texture: asset_server.load("units/station_A.png"),
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
+    });
+}
+
+fn spawn_melee_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.75, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(spawn_pos),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(25.0, 25.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(Velocity(250.))
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 150.,
+        max_health: 150.,
+    })
+    .insert(Team(0))
+    .insert(AttackComponent {
+        attack_range: 100.,
+        attack_amount: 10.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
+    .insert(MildAggression)
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/enemy_A.png"),
                 ..Default::default()
             })
             .insert(FaceMovementDirection {

@@ -1,5 +1,6 @@
 use crate::materials::MineralResources;
 use crate::selection::Team;
+use crate::units::BuildOrder;
 use crate::AppState;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
@@ -61,6 +62,78 @@ struct UnitText;
 
 #[derive(Component)]
 struct ResourceText;
+
+#[derive(Component)]
+struct BuildProgressBar;
+#[derive(Component)]
+pub struct BuildQueueParent;
+
+pub fn spawn_build_order_card(
+    commands: &mut Commands,
+    parent: Entity,
+    asset_server: &Res<AssetServer>,
+    unit_type: i32,
+) -> Option<Entity> {
+    let mut entity = None;
+
+    commands.entity(parent).with_children(|p| {
+        entity = Some(
+            p.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(60.0),
+                    height: Val::Px(60.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(WHITE.into()),
+                ..Default::default()
+            })
+            .insert(UIElement)
+            .id(),
+        );
+    });
+    if let Some(e) = entity {
+        commands.entity(e).with_children(|p| {
+            p.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Px(55.0),
+                    height: Val::Px(55.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(BLACK.into()),
+                ..Default::default()
+            })
+            .with_children(|pp| {
+                let mut asset_path = "";
+                if unit_type == 0 {
+                    asset_path = "units/station_A.png";
+                } else if unit_type == 1 {
+                    asset_path = "units/enemy_A.png";
+                } else if unit_type == 2 {
+                    asset_path = "units/ship_basic.png";
+                }
+
+                pp.spawn(ImageBundle {
+                    image: UiImage {
+                        texture: asset_server.load(asset_path),
+                        ..default()
+                    },
+                    style: Style {
+                        width: Val::Px(50.0),
+                        height: Val::Px(50.0),
+                        ..default()
+                    },
+                    ..Default::default()
+                });
+            });
+        });
+    }
+
+    return entity;
+}
 
 fn setup_ui(mut commands: Commands) {
     commands
@@ -172,12 +245,13 @@ fn setup_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
             style: Style {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::ColumnReverse,
                 ..default()
             },
             ..default()
         })
         .insert(UIElement)
+        .insert(BuildQueueParent)
         .with_children(|parent| {
             parent.spawn(ImageBundle {
                 image: UiImage {
@@ -185,13 +259,23 @@ fn setup_minimap(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
                     ..Default::default()
                 },
                 style: Style {
-                    position_type: PositionType::Absolute,
-                    bottom: Val::Px(0.0),
-                    left: Val::Px(0.0),
+                    width: Val::Px(256.0),
+                    height: Val::Px(256.0),
                     ..default()
                 },
                 ..Default::default()
             });
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        width: Val::Px(256.0),
+                        height: Val::Px(20.0),
+                        ..default()
+                    },
+                    background_color: BackgroundColor(YELLOW.into()),
+                    ..Default::default()
+                })
+                .insert(BuildProgressBar);
         });
 }
 

@@ -1,8 +1,6 @@
 TODO:
 
-ALLIES SHOULD ATTACK CLOSE ENEMIES!!! //ADD MILD AGGRESSION
-
-make unit building (when sleecting mothership - display UI: MINER, RANGED HUNTER, MELEE HUNTER
+make unit building (when sleecting mothership - display UI: MINER, RANGED HUNTER, MELEE HUNTER -> display progress bar, display queue
 
 add goal: mine as much as you can - then escape! (land mothership at place) - your score: the remaining minerals
 
