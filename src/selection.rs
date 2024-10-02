@@ -156,7 +156,7 @@ fn check_selection(
 }
 
 fn spawn_highlighters(mut cmd: Commands, asset_server: Res<AssetServer>) {
-    for _ in 0..64 {
+    for _ in 0..264 {
         cmd.spawn(SpriteBundle {
             transform: Transform::from_translation(Vec3::new(1000000., 9999999., -1.)),
             texture: asset_server.load("icon_plusLarge.png"),

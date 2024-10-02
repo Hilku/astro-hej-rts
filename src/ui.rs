@@ -15,22 +15,30 @@ pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(AppState::InGame), setup_ui);
-        app.add_systems(OnEnter(AppState::InGame), setup_minimap);
+        app.add_systems(
+            OnEnter(AppState::InGame),
+            (setup_minimap, setup_ui, reset_welcome_text),
+        );
         app.add_systems(OnEnter(AppState::Menu), setup_menu_ui);
         app.add_systems(
             Update,
             (
-                button_system.run_if(in_state(AppState::Menu).or_else(in_state(GamePhase::Lost))),
+                button_system.run_if(
+                    in_state(AppState::Menu)
+                        .or_else(in_state(GamePhase::Lost).or_else(in_state(GamePhase::Won))),
+                ),
                 update_ui_texts,
                 update_unit_ui_texts,
                 update_progress_bar,
+                run_down_welcome_text.run_if(in_state(AppState::InGame)),
             ),
         );
         app.add_systems(
             OnEnter(GamePhase::Lost),
             (setup_lose_screen, destroy_all_ui),
         );
+        app.add_systems(OnEnter(GamePhase::Won), (setup_win_screen, destroy_all_ui));
+        app.init_resource::<WelcomeText>();
     }
 }
 
@@ -191,6 +199,36 @@ fn setup_ui(mut commands: Commands) {
                     }),
                 )
                 .insert(ResourceText);
+        });
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::End,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(UIElement)
+        .with_children(|parent| {
+            parent
+                .spawn(
+                    TextBundle::from_sections([TextSection::new(
+                        "",
+                        TextStyle {
+                            font_size: 20.0,
+                            ..default()
+                        },
+                    )])
+                    .with_style(Style {
+                        width: Val::Px(550.0),
+                        top: Val::Px(20.),
+                        right: Val::Px(275.),
+                        ..default()
+                    }),
+                )
+                .insert(WelcomeTextParent);
         });
 }
 
@@ -361,7 +399,7 @@ fn setup_menu_ui(mut commands: Commands) {
                 // Here we are able to call the `From` method instead of creating a new `TextSection`.
                 // This will use the default font (a minimal subset of FiraMono) and apply the default styling.
                 TextBundle::from_sections([TextSection::new(
-                    "Astro Battler",
+                    "Asteroid Miner Fleet",
                     TextStyle {
                         font_size: 100.0,
                         ..default()
@@ -385,7 +423,7 @@ fn setup_menu_ui(mut commands: Commands) {
                         justify_content: JustifyContent::Center,
                         // vertically center child text
                         align_items: AlignItems::Center,
-                        top: Val::Px(300.0),
+                        top: Val::Percent(40.0),
                         ..default()
                     },
                     border_color: BorderColor(Color::BLACK),
@@ -407,7 +445,36 @@ fn setup_menu_ui(mut commands: Commands) {
         });
 }
 
-fn setup_lose_screen(mut commands: Commands) {
+fn setup_win_screen(mut commands: Commands, minerals: Res<MineralResources>) {
+    let mut win_text = "At least the mothership survived... 
+    But the company expects more from you!";
+    if minerals.mineral >= 200.0 {
+        win_text = "You returned with some minerals
+        But the Company needs more to pay it's shareholders their fair share!"
+    }
+    if minerals.mineral >= 500.0 {
+        win_text = "Some shareholders are happy
+        But we still can't pay our employees..."
+    }
+    if minerals.mineral >= 1000.0 {
+        win_text = "Shareholders are happy,
+        and we could pay the most important employees: CEO, CTO, CFO, COO
+        But we still can't pay the others employees..."
+    }
+    if minerals.mineral >= 2000.0 {
+        win_text = "Solid profits! 
+        We could pay some money to the workers finally!
+        Good job Captain, you earned a day off!";
+    }
+    if minerals.mineral >= 5000.0 {
+        win_text = "Solid profits! 
+        We actualyl didn't expect you to get so much from a single asteroidfield!";
+    }
+    if minerals.mineral >= 10000.0 {
+        win_text ="Okay, you're absolutely amazing!
+        The devs didn't even put a proper text here because this amount of minerals seemed impossible...";
+    }
+
     commands
         .spawn(NodeBundle {
             style: Style {
@@ -425,7 +492,7 @@ fn setup_lose_screen(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn(
                 TextBundle::from_sections([TextSection::new(
-                    "You lost!",
+                    "Mothertship escaped",
                     TextStyle {
                         font_size: 100.0,
                         ..default()
@@ -434,6 +501,109 @@ fn setup_lose_screen(mut commands: Commands) {
                 .with_text_justify(JustifyText::Center)
                 .with_style(Style {
                     top: Val::Percent(5.),
+                    ..default()
+                }),
+            );
+            parent.spawn(
+                TextBundle::from_sections([TextSection::new(
+                    format!("you got: {} minerals", minerals.mineral),
+                    TextStyle {
+                        font_size: 70.0,
+                        ..default()
+                    },
+                )])
+                .with_text_justify(JustifyText::Center)
+                .with_style(Style {
+                    top: Val::Percent(5.),
+                    ..default()
+                }),
+            );
+            parent.spawn(
+                TextBundle::from_sections([TextSection::new(
+                    win_text,
+                    TextStyle {
+                        font_size: 60.0,
+                        ..default()
+                    },
+                )])
+                .with_text_justify(JustifyText::Center)
+                .with_style(Style {
+                    top: Val::Percent(5.),
+                    ..default()
+                }),
+            );
+            parent
+                .spawn(ButtonBundle {
+                    style: Style {
+                        width: Val::Px(300.0),
+                        height: Val::Px(65.0),
+                        border: UiRect::all(Val::Px(5.0)),
+                        // horizontally center child text
+                        justify_content: JustifyContent::Center,
+                        // vertically center child text
+                        align_items: AlignItems::Center,
+                        align_content: AlignContent::Center,
+                        justify_self: JustifySelf::Center,
+                        bottom: Val::Percent(5.0),
+                        ..default()
+                    },
+                    border_color: BorderColor(Color::BLACK),
+                    border_radius: BorderRadius::MAX,
+                    background_color: NORMAL_BUTTON.into(),
+                    ..default()
+                })
+                .insert(ButtonInteraction::BackToMenu)
+                .with_children(|parent| {
+                    parent.spawn(TextBundle::from_section(
+                        "Back to Menu",
+                        TextStyle {
+                            font_size: 40.0,
+                            color: Color::srgb(0.9, 0.9, 0.9),
+                            ..default()
+                        },
+                    ));
+                });
+        });
+}
+fn setup_lose_screen(mut commands: Commands) {
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::SpaceBetween,
+                flex_direction: FlexDirection::Column,
+                align_content: AlignContent::SpaceEvenly,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(UIElement)
+        .with_children(|parent| {
+            parent.spawn(
+                TextBundle::from_sections([
+                    TextSection::new(
+                        "Mothership lost!",
+                        TextStyle {
+                            font_size: 100.0,
+                            ..default()
+                        },
+                    ),
+                    TextSection::new(
+                        r#"A sad day for the company
+                        
+                        Profits are plummeting..."#,
+                        TextStyle {
+                            font_size: 100.0,
+                            ..default()
+                        },
+                    ),
+                ])
+                .with_text_justify(JustifyText::Center)
+                .with_style(Style {
+                    top: Val::Percent(5.),
+                    width: Val::Percent(80.0),
                     ..default()
                 }),
             );
@@ -524,4 +694,65 @@ fn destroy_all_ui(mut commands: Commands, all_ui: Query<Entity, With<UIElement>>
 pub enum ButtonInteraction {
     StartGame,
     BackToMenu,
+}
+
+#[derive(Component)]
+pub struct WelcomeTextParent;
+pub fn run_down_welcome_text(
+    mut welcome_text_comp: Query<&mut Text, With<WelcomeTextParent>>,
+    time: Res<Time>,
+    mut welcome_text: ResMut<WelcomeText>,
+) {
+    if welcome_text.character_index < welcome_text.whole_text.chars().count() {
+        welcome_text.time_between_characters.tick(time.delta());
+        if welcome_text.time_between_characters.finished() {
+            welcome_text.time_between_characters.reset();
+            for mut txt in welcome_text_comp.iter_mut() {
+                txt.sections[0].value =
+                    welcome_text.whole_text[..welcome_text.character_index].to_string();
+            }
+            welcome_text.character_index += 1;
+        }
+    } else {
+        welcome_text.time_after_all_characters.tick(time.delta());
+        if welcome_text.time_after_all_characters.finished() {
+            for mut txt in welcome_text_comp.iter_mut() {
+                txt.sections[0].value = "".to_string();
+            }
+        }
+    }
+}
+pub fn reset_welcome_text(mut welcome_txt: ResMut<WelcomeText>) {
+    *welcome_txt = WelcomeText::default();
+}
+
+#[derive(Resource)]
+pub struct WelcomeText {
+    pub character_index: usize,
+    pub time_between_characters: Timer,
+    pub whole_text: String,
+    pub time_after_all_characters: Timer,
+}
+
+impl Default for WelcomeText {
+    fn default() -> WelcomeText {
+        WelcomeText {
+            character_index: 0,
+            time_between_characters: Timer::from_seconds(0.02, TimerMode::Once),
+            whole_text: String::from(
+                r#"Welcome Captain!
+Your goal is simple: Mine as many asteroids as you can!
+            
+Just watch out for the space pirates
+            
+You can use the mineral to fabricate new units with your Mother Ship
+            
+We'll be giving you an extraction location in 5 minutes
+Make sure you're all loaded up with mineral when you request extraction
+            
+Good luck Captain...."#,
+            ),
+            time_after_all_characters: Timer::from_seconds(8.0, TimerMode::Once),
+        }
+    }
 }

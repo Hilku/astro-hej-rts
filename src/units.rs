@@ -4,6 +4,7 @@ use crate::selection::{CurrentlySelected, Selectable, Team};
 use crate::ui::{spawn_build_order_card, BuildQueueParent};
 use crate::AppState;
 use crate::DontDestroyOnLoad;
+use crate::GamePhase;
 use crate::MainCamera;
 use crate::MapBoundaries;
 use bevy::prelude::*;
@@ -20,6 +21,7 @@ impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_command_highlighters); //Temp
         app.add_systems(OnEnter(AppState::InGame), (spawn_units, reset_mastermind));
+        app.add_systems(OnEnter(AppState::Menu), spawn_main_menu_units);
         app.add_systems(
             Update,
             (
@@ -32,7 +34,8 @@ impl Plugin for UnitsPlugin {
                 enemy_mastermind,
                 handle_add_to_build_queue,
                 build_requested_units,
-            ), //TODO: ONLY RUN THESE SYSTEMS IF APPSTATE == INGAME
+            )
+                .run_if(in_state(GamePhase::Playing)), //TODO: ONLY RUN THESE SYSTEMS IF APPSTATE == INGAME
         );
         app.add_systems(
             PostUpdate,
@@ -51,8 +54,6 @@ impl Plugin for UnitsPlugin {
 
 #[derive(Component)]
 pub struct MotherUnit;
-
-//TODO: ADD ENEMYBRAIN IT SHOULD SPAWN WAVES OF ENEMIES
 
 #[derive(Resource)]
 pub struct EnemyBrain {
@@ -163,8 +164,9 @@ fn build_requested_units(
     }
 }
 
-fn reset_mastermind(mut enemy_brain: ResMut<EnemyBrain>) {
+fn reset_mastermind(mut enemy_brain: ResMut<EnemyBrain>, mut build_queue: ResMut<BuildQueue>) {
     *enemy_brain = EnemyBrain::default();
+    *build_queue = BuildQueue::default();
 }
 
 fn enemy_mastermind(
@@ -184,20 +186,64 @@ fn enemy_mastermind(
 
         let mut column_index = 0;
         let mut row_index = 0;
-        for _ in 0..enemy_brain.current_wave {
+        let mut rng = rand::thread_rng();
+
+        let spawn_side = rng.gen_range(0..4);
+        let mut spawn_pos = Vec3::ZERO;
+        match spawn_side {
+            0 => {
+                spawn_pos = Vec3::new(
+                    rng.gen_range(boundaries.x_boundaries.x..boundaries.x_boundaries.y),
+                    boundaries.y_boundaries.y + 30.0,
+                    0.0,
+                );
+            }
+            1 => {
+                spawn_pos = Vec3::new(
+                    boundaries.x_boundaries.y + 30.0,
+                    rng.gen_range(boundaries.y_boundaries.x..boundaries.y_boundaries.y),
+                    0.0,
+                );
+            }
+            2 => {
+                spawn_pos = Vec3::new(
+                    rng.gen_range(boundaries.x_boundaries.x..boundaries.x_boundaries.y),
+                    boundaries.y_boundaries.x - 30.0,
+                    0.0,
+                );
+            }
+            3 => {
+                spawn_pos = Vec3::new(
+                    boundaries.x_boundaries.x - 30.0,
+                    rng.gen_range(boundaries.y_boundaries.x..boundaries.y_boundaries.y),
+                    0.0,
+                );
+            }
+            _ => {}
+        }
+        for i in 0..enemy_brain.current_wave {
             column_index += 1;
             if column_index >= column_count {
                 row_index += 1;
                 column_index = 0;
             }
-
-            spawn_melee_enemy(
-                &mut commands,
-                Vec3::new(0.0, boundaries.y_boundaries.y + 20.0, 0.0)
-                    + Vec3::new(80., 0., 0.) * column_index as f32
-                    + Vec3::new(0., -80., 0.) * row_index as f32,
-                &asset_server,
-            );
+            if i < 7 {
+                spawn_melee_enemy(
+                    &mut commands,
+                    spawn_pos
+                        + Vec3::new(80., 0., 0.) * column_index as f32
+                        + Vec3::new(0., -80., 0.) * row_index as f32,
+                    &asset_server,
+                );
+            } else {
+                spawn_ranged_enemy(
+                    &mut commands,
+                    spawn_pos
+                        + Vec3::new(80., 0., 0.) * column_index as f32
+                        + Vec3::new(0., -80., 0.) * row_index as f32,
+                    &asset_server,
+                );
+            }
         }
     }
 }
@@ -219,7 +265,7 @@ fn spawn_melee_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
         current: 70.,
         max_health: 70.,
     })
-    .insert(Velocity(150.))
+    .insert(Velocity(100.))
     .insert(Team(1))
     .insert(AttackComponent {
         attack_range: 100.,
@@ -286,7 +332,7 @@ fn spawn_ranged_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<As
         current: 70.,
         max_health: 70.,
     })
-    .insert(Velocity(150.))
+    .insert(Velocity(90.))
     .insert(Team(1))
     .insert(AttackComponent {
         attack_range: 200.,
@@ -1042,7 +1088,7 @@ fn spawn_ranged_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
     })
     .insert(Team(0))
     .insert(AttackComponent {
-        attack_range: 200.,
+        attack_range: 300.,
         attack_amount: 10.,
         time_between_attacks: attack_timer.clone(),
     })
@@ -1115,8 +1161,8 @@ fn spawn_miner_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Asse
     })
     .insert(MiningComponent {
         current_carry: 0.0,
-        max_carry: 5.0,
-        time_between_mine: Timer::from_seconds(0.5, TimerMode::Once),
+        max_carry: 10.0,
+        time_between_mine: Timer::from_seconds(0.25, TimerMode::Once),
     })
     .with_children(|parent| {
         parent
@@ -1212,5 +1258,59 @@ fn spawn_melee_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Asse
                 ..Default::default()
             })
             .insert(RenderLayers::layer(1));
+    });
+}
+
+fn spawn_main_menu_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+
+    //MOTHERSHIP
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/station_B.png"),
+        sprite: Sprite {
+            color: Color::srgba(1., 1., 1., 1.),
+            custom_size: Some(Vec2::new(128., 128.)),
+            ..default()
+        },
+        transform: Transform::from_translation(Vec3::new(-500.0, -100., 0.)),
+        ..Default::default()
+    });
+    //Miners
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/station_A.png"),
+        transform: Transform::from_translation(Vec3::new(-50.0, -80., 0.)),
+        ..Default::default()
+    });
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/station_A.png"),
+        transform: Transform::from_translation(Vec3::new(500.0, 80., 0.)),
+        ..Default::default()
+    });
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/station_A.png"),
+        transform: Transform::from_translation(Vec3::new(-400.0, -150., 0.)),
+        ..Default::default()
+    });
+    //ASTEROIDS
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/meteor_squareDetailedLarge.png"),
+        sprite: Sprite {
+            color: Color::srgba(1., 1., 1., 1.),
+            custom_size: Some(Vec2::new(150., 150.)),
+            ..default()
+        },
+        transform: Transform::from_translation(Vec3::new(-800.0, -400., 0.)),
+        ..Default::default()
+    });
+    cmd.spawn(SpriteBundle {
+        texture: asset_server.load("units/meteor_squareDetailedLarge.png"),
+        sprite: Sprite {
+            color: Color::srgba(1., 1., 1., 1.),
+            custom_size: Some(Vec2::new(150., 150.)),
+            ..default()
+        },
+        transform: Transform::from_translation(Vec3::new(700.0, 400., 0.)),
+        ..Default::default()
     });
 }

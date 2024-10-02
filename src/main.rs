@@ -1,3 +1,7 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 use bevy::prelude::*;
 mod materials;
 mod movement;
@@ -6,8 +10,9 @@ mod ui;
 mod units;
 use bevy::render::camera::ClearColorConfig;
 use bevy::render::view::visibility::RenderLayers;
-use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::window::{CursorGrabMode, PrimaryWindow, WindowMode};
 use bevy_rapier2d::prelude::*;
+use rand::Rng;
 use selection::Team;
 use units::MotherUnit;
 
@@ -29,6 +34,7 @@ enum GamePhase {
     #[default]
     Playing,
     Lost,
+    Won,
 }
 
 #[derive(Resource)]
@@ -54,7 +60,14 @@ impl Plugin for StartupPlugin {
         app.add_systems(Update, (draw_rect_for_main_cam, keep_camera_in_bounderies));
         app.add_systems(OnEnter(GamePhase::Playing), cursor_grab);
         app.add_systems(OnExit(GamePhase::Playing), cursor_ungrab);
+        app.add_systems(Update, check_if_won.run_if(in_state(GamePhase::Playing)));
+        app.add_systems(
+            Update,
+            return_to_main_menu.run_if(in_state(AppState::InGame)),
+        );
+        app.add_systems(Update, spawn_end_point);
         app.init_resource::<MapBoundaries>();
+        app.init_resource::<EndGameTimer>();
     }
 }
 
@@ -95,7 +108,13 @@ fn draw_rect_for_main_cam(
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                mode: WindowMode::BorderlessFullscreen,
+                ..default()
+            }),
+            ..default()
+        }))
         .init_state::<AppState>()
         .add_sub_state::<GamePhase>()
         .add_plugins(StartupPlugin)
@@ -118,10 +137,13 @@ struct DontDestroyOnLoad;
 fn despawn_everything(
     mut commands: Commands,
     entities: Query<Entity, (Without<Parent>, Without<DontDestroyOnLoad>, Without<Window>)>,
+    mut end_game_timer: ResMut<EndGameTimer>,
 ) {
     for e in &entities {
         commands.entity(e).despawn_recursive();
     }
+
+    *end_game_timer = EndGameTimer::default();
 }
 
 //TODO: Add a tracker on the motherunit so we can move the camera there on lose!
@@ -177,7 +199,107 @@ fn keep_camera_in_bounderies(
     }
 }
 
-/* TODO: add goal! mine 10000 rocks (as many rocks as you can in x time)
+#[derive(Component)]
+pub struct EndPoint;
 
+fn check_if_won(
+    mother_unit: Query<&Transform, With<MotherUnit>>,
+    end_points: Query<&Transform, (With<EndPoint>, Without<MotherUnit>)>,
+    mut main_camera: Query<
+        &mut Transform,
+        (With<MainCamera>, Without<MotherUnit>, Without<EndPoint>),
+    >,
+    mut game_phase: ResMut<NextState<GamePhase>>,
+) {
+    for mother_tr in mother_unit.iter() {
+        for end_point_tr in end_points.iter() {
+            if (mother_tr.translation - end_point_tr.translation).length() < 50.0 {
+                for mut cam_tr in main_camera.iter_mut() {
+                    cam_tr.translation = mother_tr.translation;
+                }
+                game_phase.set(GamePhase::Won);
+            }
+        }
+    }
+}
 
-*/
+#[derive(Resource)]
+pub struct EndGameTimer(Timer);
+
+impl Default for EndGameTimer {
+    fn default() -> EndGameTimer {
+        EndGameTimer(Timer::from_seconds(60.0 * 5.0, TimerMode::Once))
+    }
+}
+
+fn spawn_end_point(
+    mut cmd: Commands,
+    asset_server: Res<AssetServer>,
+    map_boundaries: Res<MapBoundaries>,
+    end_points: Query<Entity, With<EndPoint>>,
+    time: Res<Time>,
+    mut end_game_timer: ResMut<EndGameTimer>,
+    mother_unit_q: Query<&GlobalTransform, With<MotherUnit>>,
+) {
+    let mut end_point_count = 0;
+    for _ in end_points.iter() {
+        end_point_count += 1;
+        break;
+    }
+
+    end_game_timer.0.tick(time.delta());
+    if end_game_timer.0.finished() {
+        if end_point_count == 0 {
+            let mut rng = rand::thread_rng();
+            for mother_tr in mother_unit_q.iter() {
+                let mut spawn_pos = mother_tr.translation();
+                let mut repeat_counter = 0;
+                while (mother_tr.translation().truncate() - spawn_pos.truncate()).length() < 200.0
+                    || repeat_counter > 20
+                {
+                    repeat_counter += 1;
+                    spawn_pos = Vec3::new(
+                        rng.gen_range(
+                            (map_boundaries.x_boundaries.x + 100.0)
+                                ..(map_boundaries.x_boundaries.y - 100.0),
+                        ),
+                        rng.gen_range(
+                            (map_boundaries.y_boundaries.x + 100.0)
+                                ..(map_boundaries.y_boundaries.y - 100.0),
+                        ),
+                        -10.0,
+                    );
+                }
+
+                let transform = Transform::from_translation(spawn_pos);
+                cmd.spawn(SpatialBundle {
+                    transform,
+                    ..Default::default()
+                })
+                .insert(EndPoint)
+                .with_children(|parent| {
+                    parent
+                        .spawn(SpriteBundle {
+                            texture: asset_server.load("icon_plusLarge.png"),
+                            sprite: Sprite {
+                                color: Color::srgba(1., 1., 0., 1.),
+                                custom_size: Some(Vec2::new(150., 150.)),
+                                ..default()
+                            },
+                            ..Default::default()
+                        })
+                        .insert(RenderLayers::from_layers(&[0, 1]));
+                });
+            }
+        }
+    }
+}
+
+fn return_to_main_menu(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut app_state: ResMut<NextState<AppState>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        app_state.set(AppState::Menu);
+    }
+}

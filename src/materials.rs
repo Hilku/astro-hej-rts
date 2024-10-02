@@ -132,7 +132,7 @@ fn spawn_asteroid(
         max_health: 100.,
     })
     .insert(MoveForward { speed: 40. })
-    .insert(Mineable { amount: 50. })
+    .insert(Mineable { amount: 250. })
     .with_children(|parent| {
         parent.spawn(SpriteBundle {
             texture: asset_server.load("units/meteor_squareDetailedLarge.png"),
@@ -171,7 +171,7 @@ fn spawn_asetroids(mut cmd: Commands, asset_server: Res<AssetServer>) {
             max_health: 100.,
         })
         .insert(MoveForward { speed: 1. })
-        .insert(Mineable { amount: 100. })
+        .insert(Mineable { amount: 250. })
         .with_children(|parent| {
             parent.spawn(SpriteBundle {
                 texture: asset_server.load("units/meteor_squareDetailedLarge.png"),

@@ -1,5 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
+use crate::GamePhase;
 use crate::MainCamera;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -26,7 +27,10 @@ pub struct MovementPlugin;
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostUpdate, face_towards_movement);
-        app.add_systems(Update, (avoid_each_other, camera_mover, move_forward));
+        app.add_systems(
+            Update,
+            (avoid_each_other, camera_mover, move_forward).run_if(in_state(GamePhase::Playing)),
+        );
     }
 }
 
