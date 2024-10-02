@@ -39,16 +39,13 @@ pub struct Mineable {
     pub amount: f32,
 }
 
-//TODO: ADD ASTEROIDBRAIN: IT SHOULD MANAGE THE NUMBER OF ASTEROIDS
 #[derive(Resource)]
 pub struct AsteroidBrain {
-    pub current_wave: i32,
     pub time_between_wave: Timer,
 }
 impl Default for AsteroidBrain {
     fn default() -> AsteroidBrain {
         AsteroidBrain {
-            current_wave: 0,
             time_between_wave: Timer::from_seconds(10.0, TimerMode::Once),
         }
     }
@@ -67,29 +64,47 @@ fn asteroid_mastermind(
     enemy_brain.time_between_wave.tick(time.delta());
     if enemy_brain.time_between_wave.finished() {
         enemy_brain.time_between_wave.reset();
-
-        let number_of_units = (enemy_brain.current_wave as f64).sqrt();
-        let column_count = number_of_units.ceil() as i64;
-
-        let mut column_index = 0;
-        let mut row_index = 0;
         let mut rng = rand::thread_rng();
-        for _ in 0..enemy_brain.current_wave {
-            column_index += 1;
-            if column_index >= column_count {
-                row_index += 1;
-                column_index = 0;
-            }
 
-            spawn_asteroid(
-                &mut commands,
-                &asset_server,
-                Vec3::new(0.0, boundaries.y_boundaries.y + 20.0, 0.0)
-                    + Vec3::new(80., 0., 0.) * column_index as f32
-                    + Vec3::new(0., -80., 0.) * row_index as f32,
-                rng.gen_range(-PI..PI),
-            );
+        let spawn_side = rng.gen_range(0..4);
+        let mut spawn_pos = Vec3::ZERO;
+        let mut start_rotation = rng.gen_range(PI..(2.0 * PI));
+        match spawn_side {
+            0 => {
+                spawn_pos = Vec3::new(
+                    rng.gen_range(boundaries.x_boundaries.x..boundaries.x_boundaries.y),
+                    boundaries.y_boundaries.y + 30.0,
+                    0.0,
+                );
+                start_rotation = rng.gen_range(PI..(2.0 * PI));
+            }
+            1 => {
+                spawn_pos = Vec3::new(
+                    boundaries.x_boundaries.y + 30.0,
+                    rng.gen_range(boundaries.y_boundaries.x..boundaries.y_boundaries.y),
+                    0.0,
+                );
+                start_rotation = rng.gen_range(PI..(2.0 * PI)) - PI / 2.0;
+            }
+            2 => {
+                spawn_pos = Vec3::new(
+                    rng.gen_range(boundaries.x_boundaries.x..boundaries.x_boundaries.y),
+                    boundaries.y_boundaries.x - 30.0,
+                    0.0,
+                );
+                start_rotation = rng.gen_range(PI..(2.0 * PI)) - 2.0 * (PI / 2.0);
+            }
+            3 => {
+                spawn_pos = Vec3::new(
+                    boundaries.x_boundaries.x - 30.0,
+                    rng.gen_range(boundaries.y_boundaries.x..boundaries.y_boundaries.y),
+                    0.0,
+                );
+                start_rotation = rng.gen_range(PI..(2.0 * PI)) - 3.0 * (PI / 2.0);
+            }
+            _ => {}
         }
+        spawn_asteroid(&mut commands, &asset_server, spawn_pos, start_rotation);
     }
 }
 fn spawn_asteroid(
@@ -111,8 +126,8 @@ fn spawn_asteroid(
         current: 100.,
         max_health: 100.,
     })
-    .insert(MoveForward { speed: 20. })
-    .insert(Mineable { amount: 100. })
+    .insert(MoveForward { speed: 40. })
+    .insert(Mineable { amount: 50. })
     .with_children(|parent| {
         parent.spawn(SpriteBundle {
             texture: asset_server.load("units/meteor_squareDetailedLarge.png"),
@@ -177,9 +192,19 @@ fn spawn_asetroids(mut cmd: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-fn delete_asteroids(mut cmd: Commands, mineable_query: Query<(&Mineable, Entity)>) {
-    for (mineable, e) in mineable_query.iter() {
+fn delete_asteroids(
+    mut cmd: Commands,
+    mineable_query: Query<(&Mineable, Entity, &Transform)>,
+    map_boundaries: Res<MapBoundaries>,
+) {
+    for (mineable, e, tr) in mineable_query.iter() {
         if mineable.amount <= 0.0 {
+            cmd.entity(e).despawn_recursive();
+        } else if tr.translation.x < (map_boundaries.x_boundaries.x - 50.0)
+            || tr.translation.x > (map_boundaries.x_boundaries.y + 50.0)
+            || tr.translation.y < (map_boundaries.y_boundaries.x - 50.0)
+            || tr.translation.y > (map_boundaries.y_boundaries.y + 50.0)
+        {
             cmd.entity(e).despawn_recursive();
         }
     }

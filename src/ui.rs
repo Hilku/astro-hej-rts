@@ -1,4 +1,5 @@
 use crate::materials::MineralResources;
+use crate::selection::Team;
 use crate::AppState;
 use crate::GamePhase;
 use bevy::color::palettes::basic::*;
@@ -21,6 +22,7 @@ impl Plugin for UIPlugin {
             (
                 button_system.run_if(in_state(AppState::Menu).or_else(in_state(GamePhase::Lost))),
                 update_ui_texts,
+                update_unit_ui_texts,
             ),
         );
         app.add_systems(
@@ -39,6 +41,21 @@ fn update_ui_texts(
     }
 }
 
+fn update_unit_ui_texts(
+    mut resource_text: Query<&mut Text, With<UnitText>>,
+    ally_units_q: Query<&Team>,
+) {
+    let mut count = 0;
+    for t in ally_units_q.iter() {
+        if t.0 == 0 {
+            count += 1;
+        }
+    }
+    for mut text in resource_text.iter_mut() {
+        text.sections[1].value = format!("{}", count);
+    }
+}
+
 #[derive(Component)]
 struct UnitText;
 
@@ -51,7 +68,6 @@ fn setup_ui(mut commands: Commands) {
             style: Style {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                align_items: AlignItems::End,
                 ..default()
             },
             ..default()
@@ -65,12 +81,20 @@ fn setup_ui(mut commands: Commands) {
                         TextSection::new("0", TextStyle { ..default() }),
                     ])
                     .with_style(Style {
-                        bottom: Val::Px(30.),
+                        top: Val::Px(20.),
                         left: Val::Px(30.),
                         ..default()
                     }),
                 )
                 .insert(UnitText);
+            parent.spawn(
+                TextBundle::from_sections([TextSection::new(" | ", TextStyle { ..default() })])
+                    .with_style(Style {
+                        top: Val::Px(20.),
+                        left: Val::Px(30.),
+                        ..default()
+                    }),
+            );
             parent
                 .spawn(
                     TextBundle::from_sections([
@@ -78,8 +102,8 @@ fn setup_ui(mut commands: Commands) {
                         TextSection::new("0", TextStyle { ..default() }),
                     ])
                     .with_style(Style {
-                        bottom: Val::Px(30.),
-                        left: Val::Px(50.),
+                        top: Val::Px(20.),
+                        left: Val::Px(30.),
                         ..default()
                     }),
                 )

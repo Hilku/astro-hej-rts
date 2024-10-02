@@ -16,10 +16,7 @@ pub struct UnitsPlugin;
 impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_command_highlighters); //Temp
-        app.add_systems(
-            OnEnter(AppState::InGame),
-            (spawn_units, spawn_enemy_units, reset_mastermind),
-        );
+        app.add_systems(OnEnter(AppState::InGame), (spawn_units, reset_mastermind));
         app.add_systems(
             Update,
             (
@@ -169,6 +166,74 @@ fn spawn_melee_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<Ass
             .insert(RenderLayers::layer(1));
     });
 }
+
+fn spawn_ranged_enemy(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(spawn_pos),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(25.0, 25.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 50.,
+        max_health: 50.,
+    })
+    .insert(Velocity(150.))
+    .insert(Team(1))
+    .insert(AttackComponent {
+        attack_range: 200.,
+        attack_amount: 10.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
+    .insert(AggressiveLilPig)
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/enemy_A.png"),
+                sprite: Sprite {
+                    color: Color::srgb(1., 0.5, 0.5),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(1., 0., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(1., 0., 0., 1.),
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
+    });
+}
+
 fn spawn_bullet(
     cmd: &mut Commands,
     damage: f32,
@@ -204,70 +269,7 @@ fn spawn_bullet(
 fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
     attack_timer.tick(std::time::Duration::from_secs(1));
-    //SPAWN RANGERS
-    for i in -3..3 {
-        cmd.spawn(SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(
-                (i as f32 % 10.) * 100.,
-                45. * i as f32 / 10.,
-                0.,
-            )),
-            ..Default::default()
-        })
-        .insert(Collider::cuboid(25.0, 25.0))
-        .insert(Sensor)
-        .insert(Selectable)
-        .insert(Velocity(150.))
-        .insert(UnitCommandList {
-            commands: Vec::new(),
-        })
-        .insert(Health {
-            current: 100.,
-            max_health: 100.,
-        })
-        .insert(Team(0))
-        .insert(AttackComponent {
-            attack_range: 200.,
-            attack_amount: 10.,
-            time_between_attacks: attack_timer.clone(),
-        })
-        .insert(Avoidance {
-            last_frame_pos: Vec3::ZERO,
-            currently_avoiding: false,
-        })
-        .with_children(|parent| {
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/ship_basic.png"),
-                    ..Default::default()
-                })
-                .insert(FaceMovementDirection {
-                    face_to_pos: Vec3::ZERO,
-                });
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("healthbar.png"),
-                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
-                    sprite: Sprite {
-                        color: Color::srgba(0., 1., 0., 1.),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(HealthBar);
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/meteor_small.png"),
-                    sprite: Sprite {
-                        color: Color::srgba(0., 1., 0., 1.),
-                        custom_size: Some(Vec2::new(100., 100.)),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(RenderLayers::layer(1));
-        });
-    }
+
     //SPAWNMOTHERSHIP
     cmd.spawn(SpatialBundle {
         transform: Transform::from_translation(Vec3::new(0., -100., 0.)),
@@ -334,69 +336,21 @@ fn spawn_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
     });
 
     //SPAWN MINERS
-    for i in -3..3 {
-        cmd.spawn(SpatialBundle {
-            transform: Transform::from_translation(Vec3::new((i as f32 % 10.) * 100., 45., 0.)),
-            ..Default::default()
-        })
-        .insert(Collider::cuboid(25.0, 25.0))
-        .insert(Sensor)
-        .insert(Selectable)
-        .insert(Velocity(150.))
-        .insert(UnitCommandList {
-            commands: Vec::new(),
-        })
-        .insert(Health {
-            current: 100.,
-            max_health: 100.,
-        })
-        .insert(Team(0))
-        .insert(AttackComponent {
-            attack_range: 50.,
-            attack_amount: 10.,
-            time_between_attacks: attack_timer.clone(),
-        })
-        .insert(Avoidance {
-            last_frame_pos: Vec3::ZERO,
-            currently_avoiding: false,
-        })
-        .insert(MiningComponent {
-            current_carry: 0.0,
-            max_carry: 5.0,
-            time_between_mine: Timer::from_seconds(0.5, TimerMode::Once),
-        })
-        .with_children(|parent| {
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/station_A.png"),
-                    ..Default::default()
-                })
-                .insert(FaceMovementDirection {
-                    face_to_pos: Vec3::ZERO,
-                });
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("healthbar.png"),
-                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
-                    sprite: Sprite {
-                        color: Color::srgba(0., 1., 0., 1.),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(HealthBar);
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/meteor_small.png"),
-                    sprite: Sprite {
-                        color: Color::srgba(0., 1., 0., 1.),
-                        custom_size: Some(Vec2::new(100., 100.)),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(RenderLayers::layer(1));
-        });
+    for i in -2..2 {
+        spawn_miner_ally(
+            &mut cmd,
+            Vec3::new((i as f32 % 10.) * 100., 45., 0.),
+            &asset_server,
+        );
+    }
+
+    //SPAWN RANGERS
+    for i in -1..1 {
+        spawn_ranged_ally(
+            &mut cmd,
+            Vec3::new((i as f32 % 10.) * 100., 45. * i as f32 / 10., 0.),
+            &asset_server,
+        );
     }
 }
 
@@ -405,75 +359,6 @@ They should attack closest enemies
 */
 #[derive(Component)]
 pub struct AggressiveLilPig;
-
-fn spawn_enemy_units(mut cmd: Commands, asset_server: Res<AssetServer>) {
-    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
-    attack_timer.tick(std::time::Duration::from_secs(1));
-    for i in 0..5 {
-        cmd.spawn(SpatialBundle {
-            transform: Transform::from_translation(Vec3::new(i as f32 * 100., 300., 0.)),
-            ..Default::default()
-        })
-        .insert(Collider::cuboid(25.0, 25.0))
-        .insert(Sensor)
-        .insert(Selectable)
-        .insert(UnitCommandList {
-            commands: Vec::new(),
-        })
-        .insert(Health {
-            current: 50.,
-            max_health: 50.,
-        })
-        .insert(Velocity(150.))
-        .insert(Team(1))
-        .insert(AttackComponent {
-            attack_range: 200.,
-            attack_amount: 10.,
-            time_between_attacks: attack_timer.clone(),
-        })
-        .insert(Avoidance {
-            last_frame_pos: Vec3::ZERO,
-            currently_avoiding: false,
-        })
-        .insert(AggressiveLilPig)
-        .with_children(|parent| {
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/ship_basic.png"),
-                    sprite: Sprite {
-                        color: Color::srgb(1., 0.5, 0.5),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(FaceMovementDirection {
-                    face_to_pos: Vec3::ZERO,
-                });
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("healthbar.png"),
-                    transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
-                    sprite: Sprite {
-                        color: Color::srgba(1., 0., 0., 1.),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(HealthBar);
-            parent
-                .spawn(SpriteBundle {
-                    texture: asset_server.load("units/meteor_small.png"),
-                    sprite: Sprite {
-                        color: Color::srgba(1., 0., 0., 1.),
-                        custom_size: Some(Vec2::new(100., 100.)),
-                        ..default()
-                    },
-                    ..Default::default()
-                })
-                .insert(RenderLayers::layer(1));
-        });
-    }
-}
 
 fn handle_aggressive_pigs(
     mut aggressive_q: Query<(&mut UnitCommandList, Entity), With<AggressiveLilPig>>,
@@ -717,12 +602,12 @@ fn move_units(
                                         }
                                     }
                                     let diff_vec = mineable_tr.translation - tr.translation;
-                                    if diff_vec.length() > 50.0 {
+                                    if diff_vec.length() > 110.0 {
                                         tr.translation +=
                                             diff_vec.normalize() * vel.0 * time.delta_seconds();
                                     }
 
-                                    if diff_vec.length() < 70.0
+                                    if diff_vec.length() < 130.0
                                         && mining_comp.time_between_mine.finished()
                                         && mineable.amount > 0.
                                     {
@@ -996,4 +881,133 @@ fn tick_attack_timers(time: Res<Time>, mut attack_comps: Query<&mut AttackCompon
     for mut attack_comp in attack_comps.iter_mut() {
         attack_comp.time_between_attacks.tick(time.delta());
     }
+}
+
+fn spawn_ranged_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(spawn_pos),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(25.0, 25.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(Velocity(150.))
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 100.,
+        max_health: 100.,
+    })
+    .insert(Team(0))
+    .insert(AttackComponent {
+        attack_range: 200.,
+        attack_amount: 10.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/ship_basic.png"),
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
+    });
+}
+
+fn spawn_miner_ally(cmd: &mut Commands, spawn_pos: Vec3, asset_server: &Res<AssetServer>) {
+    let mut attack_timer = Timer::from_seconds(0.5, TimerMode::Once);
+    attack_timer.tick(std::time::Duration::from_secs(1));
+    cmd.spawn(SpatialBundle {
+        transform: Transform::from_translation(spawn_pos),
+        ..Default::default()
+    })
+    .insert(Collider::cuboid(25.0, 25.0))
+    .insert(Sensor)
+    .insert(Selectable)
+    .insert(Velocity(150.))
+    .insert(UnitCommandList {
+        commands: Vec::new(),
+    })
+    .insert(Health {
+        current: 100.,
+        max_health: 100.,
+    })
+    .insert(Team(0))
+    .insert(AttackComponent {
+        attack_range: 50.,
+        attack_amount: 10.,
+        time_between_attacks: attack_timer.clone(),
+    })
+    .insert(Avoidance {
+        last_frame_pos: Vec3::ZERO,
+        currently_avoiding: false,
+    })
+    .insert(MiningComponent {
+        current_carry: 0.0,
+        max_carry: 5.0,
+        time_between_mine: Timer::from_seconds(0.5, TimerMode::Once),
+    })
+    .with_children(|parent| {
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/station_A.png"),
+                ..Default::default()
+            })
+            .insert(FaceMovementDirection {
+                face_to_pos: Vec3::ZERO,
+            });
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("healthbar.png"),
+                transform: Transform::from_translation(Vec3::new(0., -30., 0.)),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(HealthBar);
+        parent
+            .spawn(SpriteBundle {
+                texture: asset_server.load("units/meteor_small.png"),
+                sprite: Sprite {
+                    color: Color::srgba(0., 1., 0., 1.),
+                    custom_size: Some(Vec2::new(100., 100.)),
+                    ..default()
+                },
+                ..Default::default()
+            })
+            .insert(RenderLayers::layer(1));
+    });
 }

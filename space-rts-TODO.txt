@@ -1,10 +1,6 @@
 TODO:
 
-SPAWN WAVES OF ENEMIES - ranged hunters on bigger waves
-
-ALLIES SHOULD ATTACK CLOSE ENEMIES!!! 
-
-SPAWN Asteroids
+ALLIES SHOULD ATTACK CLOSE ENEMIES!!! //ADD MILD AGGRESSION
 
 make unit building (when sleecting mothership - display UI: MINER, RANGED HUNTER, MELEE HUNTER
 
@@ -12,10 +8,16 @@ add goal: mine as much as you can - then escape! (land mothership at place) - yo
 
 make it prettier (background for menu, rect for map)
 
-add boundaries and for units!! (add command to return to main ship (space!) - add clicking to minimap to move cam there!
+add beginning text and end text! (
+captain, your goal will be mining the asteroids! - mine as much as you can, but beware the pirates! In 5 minutes we'll send you the extraction coordinates - get the mothership there with as many minerals as possible!)
+
+SPAWN WAVES OF ENEMIES - ranged hunters on bigger waves
 
 add sounds
 
 add particles (mining, shooting)
 
-fix unit displayer text
+add map navigation and control groups!
+
+
+RESET MINERAL RESOURCES AT STARTUP!
