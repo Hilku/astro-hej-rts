@@ -1,8 +1,5 @@
 TODO:
 
-SPAWN WAVES OF ENEMIES -  also position them similarly to asteroids (random side)
-
-
 add sounds
 
 add particles (mining, shooting)
