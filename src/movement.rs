@@ -31,6 +31,7 @@ impl Plugin for MovementPlugin {
             Update,
             (avoid_each_other, camera_mover, move_forward).run_if(in_state(GamePhase::Playing)),
         );
+        app.init_resource::<LastCursorPos>();
     }
 }
 
@@ -88,32 +89,43 @@ fn face_towards_movement(
     }
 }
 
+#[derive(Resource, Default)]
+struct LastCursorPos(Vec2);
+
 fn camera_mover(
     mut camera: Query<&mut Transform, With<MainCamera>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
+    mut last_cursor_pos: ResMut<LastCursorPos>,
 ) {
     for mut c_tr in camera.iter_mut() {
         //Check if cursor is at the window's edge - then check which edge    // Games typically only have one window (the primary window)
         let mut camera_mover_vec = Vec3::ZERO;
         let window = q_windows.single();
         if let Some(position) = window.cursor_position() {
-            if position.x >= (window.resolution.physical_width() - 2) as f32 {
-                camera_mover_vec += Vec3::new(1., 0., 0.);
-            } else if position.x <= 0. {
-                camera_mover_vec += Vec3::new(-1., 0., 0.);
-            }
-
-            if position.y >= (window.resolution.physical_height() - 2) as f32 {
-                camera_mover_vec += Vec3::new(0., -1., 0.);
-            } else if position.y <= 0. {
-                camera_mover_vec += Vec3::new(0., 1., 0.);
-            }
-
-            c_tr.translation += camera_mover_vec * time.delta_seconds() * 1000.;
+            last_cursor_pos.0 = position;
         } else {
             //println!("Cursor is not in the game window.");
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let border_amount = 2;
+        #[cfg(target_arch = "wasm32")]
+        let border_amount = 100;
+
+        if last_cursor_pos.0.x >= (window.resolution.physical_width() - border_amount) as f32 {
+            camera_mover_vec += Vec3::new(1., 0., 0.);
+        } else if last_cursor_pos.0.x <= border_amount as f32 {
+            camera_mover_vec += Vec3::new(-1., 0., 0.);
+        }
+
+        if last_cursor_pos.0.y >= (window.resolution.physical_height() - border_amount) as f32 {
+            camera_mover_vec += Vec3::new(0., -1., 0.);
+        } else if last_cursor_pos.0.y <= border_amount as f32 {
+            camera_mover_vec += Vec3::new(0., 1., 0.);
+        }
+
+        c_tr.translation += camera_mover_vec * time.delta_seconds() * 1000.;
     }
 }
 

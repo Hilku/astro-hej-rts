@@ -221,6 +221,8 @@ dependencies = [
  "bevy",
  "bevy_rapier2d",
  "rand",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -2184,6 +2186,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "instant"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "io-kit-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3254,6 +3268,7 @@ dependencies = [
  "bitflags 2.6.0",
  "crossbeam",
  "downcast-rs",
+ "instant",
  "log",
  "nalgebra",
  "num-derive",
