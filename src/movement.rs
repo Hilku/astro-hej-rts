@@ -97,6 +97,7 @@ fn camera_mover(
     q_windows: Query<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
     mut last_cursor_pos: ResMut<LastCursorPos>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
     for mut c_tr in camera.iter_mut() {
         //Check if cursor is at the window's edge - then check which edge    // Games typically only have one window (the primary window)
@@ -108,17 +109,29 @@ fn camera_mover(
             //println!("Cursor is not in the game window.");
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         let border_amount = 2;
-        #[cfg(target_arch = "wasm32")]
-        let border_amount = 100;
 
+        if keyboard_input.pressed(KeyCode::KeyW) {
+            camera_mover_vec += Vec3::new(0., 1., 0.);
+        }
+        if keyboard_input.pressed(KeyCode::KeyA) {
+            camera_mover_vec += Vec3::new(-1., 0., 0.);
+        }
+        if keyboard_input.pressed(KeyCode::KeyS) {
+            camera_mover_vec += Vec3::new(0., -1., 0.);
+        }
+        if keyboard_input.pressed(KeyCode::KeyD) {
+            camera_mover_vec += Vec3::new(1., 0., 0.);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         if last_cursor_pos.0.x >= (window.resolution.physical_width() - border_amount) as f32 {
             camera_mover_vec += Vec3::new(1., 0., 0.);
         } else if last_cursor_pos.0.x <= border_amount as f32 {
             camera_mover_vec += Vec3::new(-1., 0., 0.);
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         if last_cursor_pos.0.y >= (window.resolution.physical_height() - border_amount) as f32 {
             camera_mover_vec += Vec3::new(0., -1., 0.);
         } else if last_cursor_pos.0.y <= border_amount as f32 {

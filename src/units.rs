@@ -109,7 +109,7 @@ fn handle_add_to_build_queue(
                     build_queue.queue.push_back(BuildOrder::Miner(card_entity));
                 }
             }
-            if keyboard_input.just_pressed(KeyCode::KeyW) && minerals.mineral >= 30.0 {
+            if keyboard_input.just_pressed(KeyCode::KeyE) && minerals.mineral >= 30.0 {
                 minerals.mineral -= 30.0;
                 if let Some(card_entity) =
                     spawn_build_order_card(&mut commands, card_parent, &asset_server, 1)
@@ -117,7 +117,7 @@ fn handle_add_to_build_queue(
                     build_queue.queue.push_back(BuildOrder::Melee(card_entity));
                 }
             }
-            if keyboard_input.just_pressed(KeyCode::KeyE) && minerals.mineral >= 60.0 {
+            if keyboard_input.just_pressed(KeyCode::KeyR) && minerals.mineral >= 60.0 {
                 minerals.mineral -= 60.0;
                 if let Some(card_entity) =
                     spawn_build_order_card(&mut commands, card_parent, &asset_server, 2)
